@@ -9,11 +9,11 @@ import numpy as np
 from tqdm import tqdm
 
 # catogories in AHN3 dataset
-categories = {'ground': 2.0,
-              'vegetation': 1.0,
-              'building': 6.0,
-              'bridge': 26.0,
-              'water': 9.0}
+categories = {2.0:  'ground',
+              1.0:  'vegetation',
+              6.0:  'building',
+              26.0: 'bridge',
+              9.0: 'water'}
 
 # features and id in AHN3 dataset
 AHN3_features = {'X': 0,
@@ -33,10 +33,10 @@ AHN3_features = {'X': 0,
                  'Class': 14}
 features_output = ['X', 'Y', 'Z', 'R', 'G', 'B']
 
-AREA_ID = 2
-AREA = '37EN2'  # 1: 38FN1, 2: 37EN2
+AREA_ID = 4
+AREA = '31HZ2'  # 1: 38FN1, 2: 37EN2, 3: 32CN1, 4: 31HZ2
 
-BASE_DIR = 'D:/Documents/Datasets/'
+BASE_DIR = 'D:/Documents/Datasets/'  # base directory of datasets
 DATA_FOLDER = os.path.join(BASE_DIR, 'AHN3_subsampled_1m', AREA)  # path of subsampled AHN3 point clouds
 OUTPUT_FOLDER = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_RGB')
 
@@ -61,13 +61,14 @@ for room_id, room_file in tqdm(enumerate(glob.iglob(os.path.join(DATA_FOLDER, '*
     fout1.close()
 
     # write file according to classes
-    for category in categories:
-        ANNO_PATH = os.path.join(OUTPUT_PATH, 'Annotations')
-        if not os.path.exists(ANNO_PATH):
-            os.mkdir(ANNO_PATH)
+    ANNO_PATH = os.path.join(OUTPUT_PATH, 'Annotations')
+    if not os.path.exists(ANNO_PATH):
+        os.mkdir(ANNO_PATH)
 
+    eff_categories = np.unique(output_label)
+    for category in eff_categories:
         # find corresponding classes
-        category_indices = np.where(output_label == categories[category])[0]
-        with open(ANNO_PATH + '\\' + category + '.txt', 'w+') as fout2:
+        category_indices = np.where(output_label == category)[0]
+        with open(ANNO_PATH + '\\' + categories[category] + '.txt', 'w+') as fout2:
             np.savetxt(fout2, output_data[category_indices, :], fmt="%.3f %.3f %.3f %d %d %d")
         fout2.close()

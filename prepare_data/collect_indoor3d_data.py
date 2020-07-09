@@ -1,17 +1,20 @@
 import os
-import sys
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(BASE_DIR)
-DATA_PATH = os.path.join(ROOT_DIR, 'data/Stanford3dDataset_v1.2_Aligned_Version')
-import indoor3d_util
+import prepare_data.indoor3d_util as utils
+from tqdm import tqdm
 
-anno_paths = [line.rstrip() for line in open(os.path.join(BASE_DIR, 'meta/anno_paths.txt'))]
-anno_paths = [os.path.join(DATA_PATH, p) for p in anno_paths]
+BASE_DIR = 'D:/Documents/Datasets/'  # base directory of datasets
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_RGB')
 
-output_folder = os.path.join(ROOT_DIR, 'data/stanford_indoor3d') 
+anno_paths = [line.rstrip() for line in open(os.path.join(ROOT_DIR, 'meta/anno_paths.txt'))]
+# anno_paths = [os.path.join(DATA_PATH, p) for p in anno_paths]
+
+output_folder = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_RGB_NPY')
 if not os.path.exists(output_folder):
     os.mkdir(output_folder)
 
+""" revise mistake in S3DIS dataset """
+""" 
 revise_file = os.path.join(DATA_PATH, "Area_5/hallway_6/Annotations/ceiling_1.txt")
 with open(revise_file, "r") as f:
     data = f.read()
@@ -20,9 +23,10 @@ with open(revise_file, "r") as f:
 with open(revise_file, "w") as f:
     f.write(data)
     f.close()
+"""
 
-for anno_path in anno_paths:
-	print(anno_path)
-	elements = anno_path.split('/')
-	out_filename = elements[-3]+'_'+elements[-2]+'.npy' # Area_1_hallway_1.npy
-	indoor3d_util.collect_point_label(anno_path, os.path.join(output_folder, out_filename), 'numpy')
+for anno_path in tqdm(anno_paths):
+    print(anno_path)
+    elements = anno_path.split('/')
+    out_filename = elements[-3] + '_' + elements[-2] + '.npy'  # room name: Area_1_38FN1_1.npy
+    utils.collect_point_label(anno_path, os.path.join(output_folder, out_filename), 'numpy')
