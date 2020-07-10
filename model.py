@@ -317,6 +317,7 @@ class DGCNN_semseg(nn.Module):
         super(DGCNN_semseg, self).__init__()
         self.args = args
         self.k = args.k
+        self.num_classes = args.num_classes
         
         self.bn1 = nn.BatchNorm2d(64)
         self.bn2 = nn.BatchNorm2d(64)
@@ -352,7 +353,7 @@ class DGCNN_semseg(nn.Module):
                                    self.bn8,
                                    nn.LeakyReLU(negative_slope=0.2))
         self.dp1 = nn.Dropout(p=args.dropout)
-        self.conv9 = nn.Conv1d(256, 13, kernel_size=1, bias=False)
+        self.conv9 = nn.Conv1d(256, self.num_classes, kernel_size=1, bias=False)
         
 
     def forward(self, x):

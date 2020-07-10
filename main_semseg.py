@@ -7,7 +7,6 @@
 @Time: 2020/2/24 7:17 PM
 """
 
-
 from __future__ import print_function
 import os
 import argparse
@@ -16,32 +15,33 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
-from data import S3DIS
+from data import S3DISDataset
 from model import DGCNN_semseg
 import numpy as np
 from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
 import sklearn.metrics as metrics
+from torch.utils.tensorboard import SummaryWriter
 
 
 def _init_():
     if not os.path.exists('checkpoints'):
         os.makedirs('checkpoints')
-    if not os.path.exists('checkpoints/'+args.exp_name):
-        os.makedirs('checkpoints/'+args.exp_name)
-    if not os.path.exists('checkpoints/'+args.exp_name+'/'+'models'):
-        os.makedirs('checkpoints/'+args.exp_name+'/'+'models')
-    os.system('cp main_semseg.py checkpoints'+'/'+args.exp_name+'/'+'main_semseg.py.backup')
+    if not os.path.exists('checkpoints/' + args.exp_name):
+        os.makedirs('checkpoints/' + args.exp_name)
+    if not os.path.exists('checkpoints/' + args.exp_name + '/' + 'models'):
+        os.makedirs('checkpoints/' + args.exp_name + '/' + 'models')
+    os.system('cp main_semseg.py checkpoints' + '/' + args.exp_name + '/' + 'main_semseg.py.backup')
     os.system('cp model.py checkpoints' + '/' + args.exp_name + '/' + 'model.py.backup')
     os.system('cp util.py checkpoints' + '/' + args.exp_name + '/' + 'util.py.backup')
     os.system('cp data.py checkpoints' + '/' + args.exp_name + '/' + 'data.py.backup')
 
 
-def calculate_sem_IoU(pred_np, seg_np):
-    I_all = np.zeros(13)
-    U_all = np.zeros(13)
+def calculate_sem_IoU(pred_np, seg_np, num_classes):  # num_classes: S3DIS 13
+    I_all = np.zeros(num_classes)
+    U_all = np.zeros(num_classes)
     for sem_idx in range(seg_np.shape[0]):
-        for sem in range(13):
+        for sem in range(num_classes):
             I = np.sum(np.logical_and(pred_np[sem_idx] == sem, seg_np[sem_idx] == sem))
             U = np.sum(np.logical_or(pred_np[sem_idx] == sem, seg_np[sem_idx] == sem))
             I_all[sem] += I
@@ -50,14 +50,18 @@ def calculate_sem_IoU(pred_np, seg_np):
 
 
 def train(args, io):
-    train_loader = DataLoader(S3DIS(partition='train', num_points=args.num_points, test_area=args.test_area), 
-                              num_workers=8, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points, test_area=args.test_area), 
-                            num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+    # sample_rate=1.5 to make sure some overlap
+    train_loader = DataLoader(S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area, block_size=args.block_size,
+                                           sample_rate=1.5, num_class=args.num_classes), num_workers=0, batch_size=args.batch_size, shuffle=True, drop_last=True)
+
+    test_loader = DataLoader(S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area, block_size=args.block_size,
+                                          sample_rate=1.5, num_class=args.num_classes), num_workers=0, batch_size=args.test_batch_size, shuffle=True, drop_last=True)
 
     device = torch.device("cuda" if args.cuda else "cpu")
 
-    #Try to load models
+    # Try to load models
     if args.model == 'dgcnn':
         model = DGCNN_semseg(args).to(device)
     else:
@@ -69,7 +73,7 @@ def train(args, io):
 
     if args.use_sgd:
         print("Use SGD")
-        opt = optim.SGD(model.parameters(), lr=args.lr*100, momentum=args.momentum, weight_decay=1e-4)
+        opt = optim.SGD(model.parameters(), lr=args.lr * 100, momentum=args.momentum, weight_decay=1e-4)
     else:
         print("Use Adam")
         opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -80,6 +84,17 @@ def train(args, io):
         scheduler = StepLR(opt, 20, 0.5, args.epochs)
 
     criterion = cal_loss
+
+    log_dir = os.path.join(BASE_DIR, 'log_tensorboard')
+    if not os.path.exists(log_dir):
+        os.mkdir(log_dir)
+
+    writer_train_loss = SummaryWriter(os.path.join(log_dir, 'train_loss'))
+    niter = 0
+    writer_train_accuracy = SummaryWriter(os.path.join(log_dir, 'train_accuracy'))
+    writer_train_iou = SummaryWriter(os.path.join(log_dir, 'train_mean_IOU'))
+    writer_test_accuracy = SummaryWriter(os.path.join(log_dir, 'test_accuracy'))
+    writer_test_iou = SummaryWriter(os.path.join(log_dir, 'test_mean_IOU'))
 
     best_test_iou = 0
     for epoch in range(args.epochs):
@@ -96,21 +111,23 @@ def train(args, io):
         train_label_seg = []
         for data, seg in train_loader:
             data, seg = data.to(device), seg.to(device)
-            data = data.permute(0, 2, 1)
+            data = data.permute(0, 2, 1).float()
             batch_size = data.size()[0]
             opt.zero_grad()
             seg_pred = model(data)
             seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-            loss = criterion(seg_pred.view(-1, 13), seg.view(-1,1).squeeze())
+            loss = criterion(seg_pred.view(-1, args.num_classes), seg.view(-1, 1).squeeze().long())
             loss.backward()
             opt.step()
-            pred = seg_pred.max(dim=2)[1]               # (batch_size, num_points)
+            pred = seg_pred.max(dim=2)[1]  # (batch_size, num_points)
             count += batch_size
             train_loss += loss.item() * batch_size
-            seg_np = seg.cpu().numpy()                  # (batch_size, num_points)
-            pred_np = pred.detach().cpu().numpy()       # (batch_size, num_points)
-            train_true_cls.append(seg_np.reshape(-1))       # (batch_size * num_points)
-            train_pred_cls.append(pred_np.reshape(-1))      # (batch_size * num_points)
+            niter += batch_size
+            writer_train_loss.add_scalar('Train/loss', loss.item(), niter)
+            seg_np = seg.cpu().numpy()  # (batch_size, num_points)
+            pred_np = pred.detach().cpu().numpy()  # (batch_size, num_points)
+            train_true_cls.append(seg_np.reshape(-1))  # (batch_size * num_points)
+            train_pred_cls.append(pred_np.reshape(-1))  # (batch_size * num_points)
             train_true_seg.append(seg_np)
             train_pred_seg.append(pred_np)
         if args.scheduler == 'cos':
@@ -127,13 +144,15 @@ def train(args, io):
         avg_per_class_acc = metrics.balanced_accuracy_score(train_true_cls, train_pred_cls)
         train_true_seg = np.concatenate(train_true_seg, axis=0)
         train_pred_seg = np.concatenate(train_pred_seg, axis=0)
-        train_ious = calculate_sem_IoU(train_pred_seg, train_true_seg)
-        outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f, train iou: %.6f' % (epoch, 
-                                                                                                  train_loss*1.0/count,
+        train_ious = calculate_sem_IoU(train_pred_seg, train_true_seg, args.num_classes)
+        outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f, train iou: %.6f' % (epoch,
+                                                                                                  train_loss * 1.0 / count,
                                                                                                   train_acc,
                                                                                                   avg_per_class_acc,
                                                                                                   np.mean(train_ious))
         io.cprint(outstr)
+        writer_train_accuracy.add_scalar('Train/accuracy', train_acc, epoch)
+        writer_train_iou.add_scalar('Train/mIOU', np.mean(train_ious), epoch)
 
         ####################
         # Test
@@ -147,11 +166,11 @@ def train(args, io):
         test_pred_seg = []
         for data, seg in test_loader:
             data, seg = data.to(device), seg.to(device)
-            data = data.permute(0, 2, 1)
+            data = data.permute(0, 2, 1).float()
             batch_size = data.size()[0]
             seg_pred = model(data)
             seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-            loss = criterion(seg_pred.view(-1, 13), seg.view(-1,1).squeeze())
+            loss = criterion(seg_pred.view(-1, args.num_classes), seg.view(-1, 1).squeeze().long())
             pred = seg_pred.max(dim=2)[1]
             count += batch_size
             test_loss += loss.item() * batch_size
@@ -167,16 +186,25 @@ def train(args, io):
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
         test_true_seg = np.concatenate(test_true_seg, axis=0)
         test_pred_seg = np.concatenate(test_pred_seg, axis=0)
-        test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg)
+        test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg, args.num_classes)
         outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (epoch,
-                                                                                              test_loss*1.0/count,
+                                                                                              test_loss * 1.0 / count,
                                                                                               test_acc,
                                                                                               avg_per_class_acc,
                                                                                               np.mean(test_ious))
         io.cprint(outstr)
+        writer_test_accuracy.add_scalar('Test/accuracy', test_acc, epoch)
+        writer_test_iou.add_scalar('Test/mIOU', np.mean(test_ious), epoch)
+
         if np.mean(test_ious) >= best_test_iou:
             best_test_iou = np.mean(test_ious)
             torch.save(model.state_dict(), 'checkpoints/%s/models/model_%s.t7' % (args.exp_name, args.test_area))
+
+    writer_train_loss.close()
+    writer_train_accuracy.close()
+    writer_train_iou.close()
+    writer_test_accuracy.close()
+    writer_test_iou.close()
 
 
 def test(args, io):
@@ -184,15 +212,15 @@ def test(args, io):
     all_pred_cls = []
     all_true_seg = []
     all_pred_seg = []
-    for test_area in range(1,7):
+    for test_area in range(1, 7):
         test_area = str(test_area)
         if (args.test_area == 'all') or (test_area == args.test_area):
-            test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points, test_area=test_area),
-                                     batch_size=args.test_batch_size, shuffle=False, drop_last=False)
+            test_loader = DataLoader(S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area, block_size=args.block_size,
+                                                  sample_rate=1.0, num_class=args.num_classes), batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
             device = torch.device("cuda" if args.cuda else "cpu")
 
-            #Try to load models
+            # Try to load models
             if args.model == 'dgcnn':
                 model = DGCNN_semseg(args).to(device)
             else:
@@ -209,7 +237,7 @@ def test(args, io):
             test_pred_seg = []
             for data, seg in test_loader:
                 data, seg = data.to(device), seg.to(device)
-                data = data.permute(0, 2, 1)
+                data = data.permute(0, 2, 1).float()
                 batch_size = data.size()[0]
                 seg_pred = model(data)
                 seg_pred = seg_pred.permute(0, 2, 1).contiguous()
@@ -226,7 +254,7 @@ def test(args, io):
             avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
             test_true_seg = np.concatenate(test_true_seg, axis=0)
             test_pred_seg = np.concatenate(test_pred_seg, axis=0)
-            test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg)
+            test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg, args.num_classes)
             outstr = 'Test :: test area: %s, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (test_area,
                                                                                                     test_acc,
                                                                                                     avg_per_class_acc,
@@ -244,7 +272,7 @@ def test(args, io):
         avg_per_class_acc = metrics.balanced_accuracy_score(all_true_cls, all_pred_cls)
         all_true_seg = np.concatenate(all_true_seg, axis=0)
         all_pred_seg = np.concatenate(all_pred_seg, axis=0)
-        all_ious = calculate_sem_IoU(all_pred_seg, all_true_seg)
+        all_ious = calculate_sem_IoU(all_pred_seg, all_true_seg, args.num_classes)
         outstr = 'Overall Test :: test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (all_acc,
                                                                                          avg_per_class_acc,
                                                                                          np.mean(all_ious))
@@ -253,23 +281,29 @@ def test(args, io):
 
 if __name__ == "__main__":
     # Training settings
-    parser = argparse.ArgumentParser(description='Point Cloud Part Segmentation')
-    parser.add_argument('--exp_name', type=str, default='exp', metavar='N',
+    parser = argparse.ArgumentParser(description='Point Cloud Semantic Segmentation')
+    parser.add_argument('--data_dir', type=str, default='data/AHN3_as_S3DIS_RGB_NPY',
+                        help='Directory of data')
+    parser.add_argument('--exp_name', type=str, default='RGB_30m', metavar='N',
                         help='Name of the experiment')
     parser.add_argument('--model', type=str, default='dgcnn', metavar='N',
                         choices=['dgcnn'],
                         help='Model to use, [dgcnn]')
     parser.add_argument('--dataset', type=str, default='S3DIS', metavar='N',
                         choices=['S3DIS'])
-    parser.add_argument('--test_area', type=str, default=None, metavar='N',
-                        choices=['1', '2', '3', '4', '5', '6', 'all'])
-    parser.add_argument('--batch_size', type=int, default=32, metavar='batch_size',
+    parser.add_argument('--block_size', type=float, default=30.0,
+                        help='size of one block')
+    parser.add_argument('--num_classes', type=int, default=5,
+                        help='number of classes in the dataset')
+    parser.add_argument('--test_area', type=str, default='4', metavar='N',
+                        choices=['1', '2', '3', '4', 'all'])
+    parser.add_argument('--batch_size', type=int, default=2, metavar='batch_size',
                         help='Size of batch)')
-    parser.add_argument('--test_batch_size', type=int, default=16, metavar='batch_size',
+    parser.add_argument('--test_batch_size', type=int, default=2, metavar='batch_size',
                         help='Size of batch)')
     parser.add_argument('--epochs', type=int, default=100, metavar='N',
                         help='number of episode to train ')
-    parser.add_argument('--use_sgd', type=bool, default=True,
+    parser.add_argument('--use_sgd', type=bool, default=False,
                         help='Use SGD')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate (default: 0.001, 0.1 if using sgd)')
@@ -278,11 +312,11 @@ if __name__ == "__main__":
     parser.add_argument('--scheduler', type=str, default='cos', metavar='N',
                         choices=['cos', 'step'],
                         help='Scheduler to use, [cos, step]')
-    parser.add_argument('--no_cuda', type=bool, default=False,
+    parser.add_argument('--no_cuda', type=bool, default=True,
                         help='enables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
-    parser.add_argument('--eval', type=bool,  default=False,
+    parser.add_argument('--eval', type=bool, default=False,
                         help='evaluate the model')
     parser.add_argument('--num_points', type=int, default=4096,
                         help='num of points to use')
