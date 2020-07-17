@@ -16,12 +16,14 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
 from data import S3DISDataset
+from data import S3DISDataset_eval
 from model import DGCNN_semseg
 import numpy as np
 from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
 import sklearn.metrics as metrics
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 
 def _init_():
@@ -53,11 +55,17 @@ def train(args, io):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
     # sample_rate=1.5 to make sure some overlap
-    train_loader = DataLoader(S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area, block_size=args.block_size,
-                                           sample_rate=1.5, num_class=args.num_classes), num_workers=0, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    train_loader = DataLoader(
+        S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area,
+                     block_size=args.block_size,
+                     sample_rate=1.5, num_class=args.num_classes), num_workers=8, batch_size=args.batch_size,
+        shuffle=True, drop_last=True)
 
-    test_loader = DataLoader(S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area, block_size=args.block_size,
-                                          sample_rate=1.5, num_class=args.num_classes), num_workers=0, batch_size=args.test_batch_size, shuffle=True, drop_last=True)
+    test_loader = DataLoader(
+        S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area,
+                     block_size=args.block_size,
+                     sample_rate=1.5, num_class=args.num_classes), num_workers=8, batch_size=args.test_batch_size,
+        shuffle=True, drop_last=True)
 
     device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -83,33 +91,47 @@ def train(args, io):
     elif args.scheduler == 'step':
         scheduler = StepLR(opt, 20, 0.5, args.epochs)
 
+    try:
+        checkpoint = torch.load(os.path.join(args.model_root, 'model_%s.t7' % args.test_area))
+        start_epoch = checkpoint['epoch'] + 1
+        model.load_state_dict(checkpoint['model_state_dict'])
+        opt.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        best_test_iou = checkpoint['mIOU']
+        io.cprint('Use pretrained model')
+    except:
+        io.cprint('No existing model, starting training from scratch...')
+        start_epoch = 0
+        best_test_iou = 0
+
     criterion = cal_loss
 
-    log_dir = os.path.join(BASE_DIR, 'log_tensorboard')
+    log_dir = os.path.join(BASE_DIR, args.tb_dir)
     if not os.path.exists(log_dir):
         os.mkdir(log_dir)
 
     writer_train_loss = SummaryWriter(os.path.join(log_dir, 'train_loss'))
-    niter = 0
-    writer_train_accuracy = SummaryWriter(os.path.join(log_dir, 'train_accuracy'))
-    writer_train_iou = SummaryWriter(os.path.join(log_dir, 'train_mean_IOU'))
-    writer_test_accuracy = SummaryWriter(os.path.join(log_dir, 'test_accuracy'))
-    writer_test_iou = SummaryWriter(os.path.join(log_dir, 'test_mean_IOU'))
+    writer_train_accuracy = SummaryWriter(os.path.join(log_dir))
+    writer_train_iou = SummaryWriter(os.path.join(log_dir))
+    writer_test_accuracy = SummaryWriter(os.path.join(log_dir))
+    writer_test_iou = SummaryWriter(os.path.join(log_dir))
 
-    best_test_iou = 0
-    for epoch in range(args.epochs):
+    for epoch in range(start_epoch, args.epochs):
         ####################
         # Train
         ####################
         train_loss = 0.0
         count = 0.0
+        niter = epoch * len(train_loader) * args.batch_size
         model.train()
         train_true_cls = []
         train_pred_cls = []
         train_true_seg = []
         train_pred_seg = []
         train_label_seg = []
-        for data, seg in train_loader:
+
+        io.cprint('Start training for Epoch %d ...' % epoch)
+        for data, seg in tqdm(train_loader):
             data, seg = data.to(device), seg.to(device)
             data = data.permute(0, 2, 1).float()
             batch_size = data.size()[0]
@@ -164,7 +186,9 @@ def train(args, io):
         test_pred_cls = []
         test_true_seg = []
         test_pred_seg = []
-        for data, seg in test_loader:
+
+        io.cprint('Start evaluation for Epoch %d ...' % epoch)
+        for data, seg in tqdm(test_loader):
             data, seg = data.to(device), seg.to(device)
             data = data.permute(0, 2, 1).float()
             batch_size = data.size()[0]
@@ -198,7 +222,16 @@ def train(args, io):
 
         if np.mean(test_ious) >= best_test_iou:
             best_test_iou = np.mean(test_ious)
-            torch.save(model.state_dict(), 'checkpoints/%s/models/model_%s.t7' % (args.exp_name, args.test_area))
+            savepath = 'checkpoints/%s/models/model_%s.t7' % (args.exp_name, args.test_area)
+            io.cprint('Saving the best model at %s' % savepath)
+            state = {
+                'epoch': epoch,
+                'mIOU': best_test_iou,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': opt.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+            }
+            torch.save(state, savepath)
 
     writer_train_loss.close()
     writer_train_accuracy.close()
@@ -208,17 +241,30 @@ def train(args, io):
 
 
 def test(args, io):
+    DUMP_DIR = args.test_visu_dir
     all_true_cls = []
     all_pred_cls = []
     all_true_seg = []
     all_pred_seg = []
-    for test_area in range(1, 7):
+    for test_area in range(1, 5):
         test_area = str(test_area)
         if (args.test_area == 'all') or (test_area == args.test_area):
-            test_loader = DataLoader(S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area, block_size=args.block_size,
-                                                  sample_rate=1.0, num_class=args.num_classes), batch_size=args.test_batch_size, shuffle=False, drop_last=False)
+            dataset = S3DISDataset_eval(split='test', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area,
+                                   block_size=args.block_size, stride=args.block_size, num_class=args.num_classes, num_thre=100)
+            test_loader = DataLoader(dataset, batch_size=args.test_batch_size, shuffle=False, drop_last=False)
+
+            room_idx = np.array(dataset.room_idxs)
+            num_blocks = len(room_idx)
+
+            fout_data_label = []
+            for room_id in np.unique(room_idx):
+                out_data_label_filename = 'Area_%s_room_%d_pred_gt.txt' % (test_area, room_id)
+                out_data_label_filename = os.path.join(DUMP_DIR, out_data_label_filename)
+                fout_data_label.append(open(out_data_label_filename, 'w+'))
 
             device = torch.device("cuda" if args.cuda else "cpu")
+
+            io.cprint('Start overall evaluation...')
 
             # Try to load models
             if args.model == 'dgcnn':
@@ -227,18 +273,26 @@ def test(args, io):
                 raise Exception("Not implemented")
 
             model = nn.DataParallel(model)
-            model.load_state_dict(torch.load(os.path.join(args.model_root, 'model_%s.t7' % test_area)))
+            checkpoint = torch.load(os.path.join(args.model_root, 'model_%s.t7' % args.test_area))
+            model.load_state_dict(checkpoint['model_state_dict'])
             model = model.eval()
+
+            io.cprint('model_%s.t7 restored.' % args.test_area)
+
             test_acc = 0.0
             count = 0.0
             test_true_cls = []
             test_pred_cls = []
             test_true_seg = []
             test_pred_seg = []
-            for data, seg in test_loader:
+
+            io.cprint('Start testing ...')
+            num_batch = 0
+            for data, seg in tqdm(test_loader):
                 data, seg = data.to(device), seg.to(device)
                 data = data.permute(0, 2, 1).float()
                 batch_size = data.size()[0]
+
                 seg_pred = model(data)
                 seg_pred = seg_pred.permute(0, 2, 1).contiguous()
                 pred = seg_pred.max(dim=2)[1]
@@ -248,6 +302,25 @@ def test(args, io):
                 test_pred_cls.append(pred_np.reshape(-1))
                 test_true_seg.append(seg_np)
                 test_pred_seg.append(pred_np)
+
+                # write prediction results
+                for batch_id in range(batch_size):
+                    pts = data[batch_id, :, :]
+                    pts = pts.permute(1, 0).float()
+                    l = seg[batch_id, :]
+                    pts[:, 3:6] *= 255.0
+                    pred_ = pred[batch_id, :]
+                    # compute room_id
+                    room_id = room_idx[num_batch + batch_id]
+                    for i in range(args.num_points):
+                        fout_data_label[room_id].write('%f %f %f %d %d %d %d %d\n' % (
+                            pts[i, 6]*dataset.room_coord_max[room_id][0], pts[i, 7]*dataset.room_coord_max[room_id][1], pts[i, 8]*dataset.room_coord_max[room_id][2],
+                            pts[i, 3], pts[i, 4], pts[i, 5], pred_[i], l[i]))  # xyzRGB pred gt
+                num_batch += batch_size
+
+            for room_id in np.unique(room_idx):
+                fout_data_label[room_id].close()
+
             test_true_cls = np.concatenate(test_true_cls)
             test_pred_cls = np.concatenate(test_pred_cls)
             test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
@@ -260,6 +333,12 @@ def test(args, io):
                                                                                                     avg_per_class_acc,
                                                                                                     np.mean(test_ious))
             io.cprint(outstr)
+
+            # calculate confusion matrix
+            conf_mat = metrics.confusion_matrix(test_true_cls, test_pred_cls)
+            io.cprint('Confusion matrix:')
+            io.cprint(str(conf_mat))
+
             all_true_cls.append(test_true_cls)
             all_pred_cls.append(test_pred_cls)
             all_true_seg.append(test_true_seg)
@@ -284,7 +363,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Point Cloud Semantic Segmentation')
     parser.add_argument('--data_dir', type=str, default='data/AHN3_as_S3DIS_RGB_NPY',
                         help='Directory of data')
-    parser.add_argument('--exp_name', type=str, default='RGB_30m', metavar='N',
+    parser.add_argument('--tb_dir', type=str, default='log_tensorboard',
+                        help='Directory of tensorboard logs')
+    parser.add_argument('--exp_name', type=str, default='RGB_30m_50epochs_p100', metavar='N',
                         help='Name of the experiment')
     parser.add_argument('--model', type=str, default='dgcnn', metavar='N',
                         choices=['dgcnn'],
@@ -297,11 +378,11 @@ if __name__ == "__main__":
                         help='number of classes in the dataset')
     parser.add_argument('--test_area', type=str, default='4', metavar='N',
                         choices=['1', '2', '3', '4', 'all'])
-    parser.add_argument('--batch_size', type=int, default=2, metavar='batch_size',
+    parser.add_argument('--batch_size', type=int, default=12, metavar='batch_size',
                         help='Size of batch)')
-    parser.add_argument('--test_batch_size', type=int, default=2, metavar='batch_size',
+    parser.add_argument('--test_batch_size', type=int, default=12, metavar='batch_size',
                         help='Size of batch)')
-    parser.add_argument('--epochs', type=int, default=100, metavar='N',
+    parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of episode to train ')
     parser.add_argument('--use_sgd', type=bool, default=False,
                         help='Use SGD')
@@ -312,7 +393,7 @@ if __name__ == "__main__":
     parser.add_argument('--scheduler', type=str, default='cos', metavar='N',
                         choices=['cos', 'step'],
                         help='Scheduler to use, [cos, step]')
-    parser.add_argument('--no_cuda', type=bool, default=True,
+    parser.add_argument('--no_cuda', type=bool, default=False,
                         help='enables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
@@ -326,8 +407,10 @@ if __name__ == "__main__":
                         help='Dimension of embeddings')
     parser.add_argument('--k', type=int, default=20, metavar='N',
                         help='Num of nearest neighbors to use')
-    parser.add_argument('--model_root', type=str, default='', metavar='N',
+    parser.add_argument('--model_root', type=str, default='checkpoints/RGB_30m/models', metavar='N',
                         help='Pretrained model root')
+    parser.add_argument('--test_visu_dir', default='predict',
+                        help='Directory of test visualization files.')
     args = parser.parse_args()
 
     _init_()

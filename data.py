@@ -20,6 +20,7 @@ import h5py
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+import prepare_data.indoor3d_util as indoor3d_util
 
 
 def download_modelnet40():
@@ -263,11 +264,12 @@ class S3DIS(Dataset):
 
 
 class S3DISDataset(Dataset):  # load data block by block, without using h5 files
-    def __init__(self, split='train', data_root='trainval_fullarea', num_point=4096, test_area='5', block_size=1.0, sample_rate=1.0, num_class=20, use_all_points=False):
+    def __init__(self, split='train', data_root='trainval_fullarea', num_point=4096, test_area='5', block_size=1.0, sample_rate=1.0, num_class=20, use_all_points=False, num_thre = 1024):
         super().__init__()
         self.num_point = num_point
         self.block_size = block_size
         self.use_all_points = use_all_points
+        self.num_thre = num_thre
         rooms = sorted(os.listdir(data_root))
         rooms = [room for room in rooms if 'Area_' in room]
         if split == 'train':
@@ -316,10 +318,12 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
                 block_min = center - [self.block_size / 2.0, self.block_size / 2.0, 0]
                 block_max = center + [self.block_size / 2.0, self.block_size / 2.0, 0]
                 point_idxs = np.where((points[:, 0] >= block_min[0]) & (points[:, 0] <= block_max[0]) & (points[:, 1] >= block_min[1]) & (points[:, 1] <= block_max[1]))[0]
-                if point_idxs.size >= self.num_point:
+                if point_idxs.size >= self.num_thre:
                     break
-
-            selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=False)
+            if point_idxs.size >= self.num_point:
+                selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=False)
+            else:
+                selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=True)
 
         # add normalized xyz
         selected_points = points[selected_point_idxs, :]  # num_point * 6
@@ -332,6 +336,62 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         selected_points[:, 3:6] /= 255.0
         current_points[:, 0:6] = selected_points
         current_labels = labels[selected_point_idxs]
+
+        return current_points, current_labels
+
+    def __len__(self):
+        return len(self.room_idxs)
+
+
+class S3DISDataset_eval(Dataset):  # load data block by block, without using h5 files
+    def __init__(self, split='train', data_root='trainval_fullarea', num_point=4096, test_area='5', block_size=1.0, stride=1.0, num_class=20, use_all_points=False, num_thre = 1024):
+        super().__init__()
+        self.num_point = num_point
+        self.block_size = block_size
+        self.use_all_points = use_all_points
+        self.stride = stride
+        self.num_thre = num_thre
+        rooms = sorted(os.listdir(data_root))
+        rooms = [room for room in rooms if 'Area_' in room]
+        if split == 'train':
+            rooms_split = [room for room in rooms if not 'Area_{}'.format(test_area) in room]
+        else:
+            rooms_split = [room for room in rooms if 'Area_{}'.format(test_area) in room]
+        self.room_points, self.room_labels = [], []
+        self.room_coord_min, self.room_coord_max = [], []
+
+        room_idxs = []
+        for index, room_name in enumerate(rooms_split):
+            room_path = os.path.join(data_root, room_name)
+            room_data = np.load(room_path)
+            points, labels = room_data[:, 0:6], room_data[:, 6]
+            coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
+            self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
+            block_points, block_labels = indoor3d_util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
+                                                       stride=self.stride, random_sample=False, sample_num=None)
+            room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
+            self.room_points.append(block_points), self.room_labels.append(block_labels)
+        self.room_points = np.concatenate(self.room_points)
+        self.room_labels = np.concatenate(self.room_labels)
+
+        self.room_idxs = np.array(room_idxs)
+        print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
+
+    def __getitem__(self, idx):  # get items in one block
+        room_idx = self.room_idxs[idx]
+        selected_points = self.room_points[idx]   # num_point * 6
+        current_labels = self.room_labels[idx]   # num_point
+        center = np.mean(selected_points, axis=0)
+
+        # add normalized xyz
+        current_points = np.zeros((self.num_point, 9))  # num_point * 9
+        current_points[:, 6] = selected_points[:, 0] / self.room_coord_max[room_idx][0]
+        current_points[:, 7] = selected_points[:, 1] / self.room_coord_max[room_idx][1]
+        current_points[:, 8] = selected_points[:, 2] / self.room_coord_max[room_idx][2]
+        selected_points[:, 0] = selected_points[:, 0] - center[0]
+        selected_points[:, 1] = selected_points[:, 1] - center[1]
+        selected_points[:, 3:6] /= 255.0
+        current_points[:, 0:6] = selected_points
 
         return current_points, current_labels
 
