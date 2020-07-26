@@ -42,7 +42,7 @@ def _init_():
 def calculate_sem_IoU(pred_np, seg_np, num_classes):  # num_classes: S3DIS 13
     I_all = np.zeros(num_classes)
     U_all = np.zeros(num_classes)
-    for sem_idx in range(seg_np.shape[0]):
+    for sem_idx in range(len(seg_np)):
         for sem in range(num_classes):
             I = np.sum(np.logical_and(pred_np[sem_idx] == sem, seg_np[sem_idx] == sem))
             U = np.sum(np.logical_or(pred_np[sem_idx] == sem, seg_np[sem_idx] == sem))
@@ -250,7 +250,7 @@ def test(args, io):
         test_area = str(test_area)
         if (args.test_area == 'all') or (test_area == args.test_area):
             dataset = S3DISDataset_eval(split='test', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area,
-                                   block_size=args.block_size, stride=args.block_size, num_class=args.num_classes, num_thre=100)
+                                   block_size=args.block_size, stride=args.block_size, num_class=args.num_classes, num_thre=100, use_all_points=True)
             test_loader = DataLoader(dataset, batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
             room_idx = np.array(dataset.room_idxs)
@@ -302,6 +302,7 @@ def test(args, io):
                 test_pred_cls.append(pred_np.reshape(-1))
                 test_true_seg.append(seg_np)
                 test_pred_seg.append(pred_np)
+                print(np.array(seg_np).shape)
 
                 # write prediction results
                 for batch_id in range(batch_size):
@@ -310,24 +311,24 @@ def test(args, io):
                     l = seg[batch_id, :]
                     pts[:, 3:6] *= 255.0
                     pred_ = pred[batch_id, :]
+                    logits = seg_pred[batch_id, :, :]
                     # compute room_id
                     room_id = room_idx[num_batch + batch_id]
-                    for i in range(args.num_points):
-                        fout_data_label[room_id].write('%f %f %f %d %d %d %d %d\n' % (
+                    for i in range(pts.shape[0]):
+                        fout_data_label[room_id].write('%f %f %f %d %d %d %d %d %f %f %f %f\n' % (
                             pts[i, 6]*dataset.room_coord_max[room_id][0], pts[i, 7]*dataset.room_coord_max[room_id][1], pts[i, 8]*dataset.room_coord_max[room_id][2],
-                            pts[i, 3], pts[i, 4], pts[i, 5], pred_[i], l[i]))  # xyzRGB pred gt
+                            pts[i, 3], pts[i, 4], pts[i, 5], pred_[i], l[i], logits[i, 0], logits[i, 1], logits[i, 2], logits[i, 3]))  # xyzRGB pred gt
                 num_batch += batch_size
 
             for room_id in np.unique(room_idx):
                 fout_data_label[room_id].close()
 
+            test_ious = calculate_sem_IoU(test_pred_cls, test_true_cls, args.num_classes)
             test_true_cls = np.concatenate(test_true_cls)
             test_pred_cls = np.concatenate(test_pred_cls)
             test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
             avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
-            test_true_seg = np.concatenate(test_true_seg, axis=0)
-            test_pred_seg = np.concatenate(test_pred_seg, axis=0)
-            test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg, args.num_classes)
+            # test_pred_seg = np.concatenate(test_pred_seg, axis=0)
             outstr = 'Test :: test area: %s, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (test_area,
                                                                                                     test_acc,
                                                                                                     avg_per_class_acc,
@@ -374,7 +375,7 @@ if __name__ == "__main__":
                         choices=['S3DIS'])
     parser.add_argument('--block_size', type=float, default=30.0,
                         help='size of one block')
-    parser.add_argument('--num_classes', type=int, default=5,
+    parser.add_argument('--num_classes', type=int, default=4,
                         help='number of classes in the dataset')
     parser.add_argument('--test_area', type=str, default='4', metavar='N',
                         choices=['1', '2', '3', '4', 'all'])

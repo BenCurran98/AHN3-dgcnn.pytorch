@@ -17,8 +17,7 @@ g_class2label = {cls: i for i, cls in enumerate(g_classes)}
 g_class2color = {'vegetation': [0, 255, 0],
                  'ground': [0, 0, 255],
                  'building': [0, 255, 255],
-                 'water': [255, 255, 0],
-                 'bridge': [255, 0, 255]}
+                 'water': [255, 255, 0]}
 g_easy_view_labels = [7, 8, 9, 10, 11, 1]  # todo:
 g_label2color = {g_classes.index(cls): g_class2color[cls] for cls in g_classes}
 
@@ -125,7 +124,7 @@ def sample_data_label(data, label, num_sample):
 
 
 def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
-                random_sample=False, sample_num=None, sample_aug=1):
+                random_sample=False, sample_num=None, sample_aug=1, use_all_points=False):
     """ Prepare block training data.
     Args:
         data: N x 6 numpy array, 012 are XYZ in meters, 345 are RGB in [0,1]
@@ -186,14 +185,24 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
         block_data = data[cond, :]
         block_label = label[cond]
 
-        # randomly subsample data
-        block_data_sampled, block_label_sampled = \
-            sample_data_label(block_data, block_label, num_point)
-        block_data_list.append(np.expand_dims(block_data_sampled, 0))
-        block_label_list.append(np.expand_dims(block_label_sampled, 0))
+        if use_all_points:
+            block_data_list.append(block_data)
+            block_label_list.append(block_label)
+        else:
+            # randomly subsample data
+            block_data_sampled, block_label_sampled = \
+                sample_data_label(block_data, block_label, num_point)
+            block_data_list.append(np.expand_dims(block_data_sampled, 0))
+            block_label_list.append(np.expand_dims(block_label_sampled, 0))
 
-    return np.concatenate(block_data_list, 0), \
-           np.concatenate(block_label_list, 0)
+    if use_all_points:
+        block_data_return, block_label_return = np.array(block_data_list), np.array(block_label_list)
+    else:
+        block_data_return, block_label_return = np.concatenate(block_data_list, 0), np.concatenate(block_label_list, 0)
+    print('block_data_return_size:')
+    print(np.array(block_data_return).shape)
+
+    return block_data_return, block_label_return
 
 
 def room2blocks_plus(data_label, num_point, block_size, stride,

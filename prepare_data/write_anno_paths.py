@@ -9,7 +9,7 @@ import numpy as np
 
 BASE_DIR = 'D:/Documents/Datasets/'  # base directory of datasets
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_RGB')
+DATA_PATH = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_NRI')
 
 with open(os.path.join(ROOT_DIR, 'meta/anno_paths.txt'), 'w+') as anno_paths:
     paths = []

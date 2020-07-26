@@ -31,26 +31,34 @@ AHN3_features = {'X': 0,
                  'GpsTime': 12,
                  'Intensity': 13,
                  'Class': 14}
-features_output = ['X', 'Y', 'Z', 'R', 'G', 'B']
+features_output = ['X', 'Y', 'Z', 'NumberOfReturns', 'ReturnNumber', 'Intensity']
 
 AREA_ID = 4
 AREA = '31HZ2'  # 1: 38FN1, 2: 37EN2, 3: 32CN1, 4: 31HZ2
 
 BASE_DIR = 'D:/Documents/Datasets/'  # base directory of datasets
 DATA_FOLDER = os.path.join(BASE_DIR, 'AHN3_subsampled_1m', AREA)  # path of subsampled AHN3 point clouds
-OUTPUT_FOLDER = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_RGB')
+OUTPUT_FOLDER = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_NRI')
+if not os.path.exists(OUTPUT_FOLDER):
+    os.mkdir(OUTPUT_FOLDER)
 
 print('Generate files for Area {}'.format(AREA_ID))
 
 for room_id, room_file in tqdm(enumerate(glob.iglob(os.path.join(DATA_FOLDER, '*.txt')))):  # read each tiled point cloud
     room_id += 1
-    OUTPUT_PATH = os.path.join(OUTPUT_FOLDER, 'Area_' + str(AREA_ID), AREA + '_' + str(room_id))
+    OUTPUT_PATH = os.path.join(OUTPUT_FOLDER, 'Area_' + str(AREA_ID))
+    if not os.path.exists(OUTPUT_PATH):
+        os.mkdir(OUTPUT_PATH)
+    OUTPUT_PATH = os.path.join(OUTPUT_PATH, AREA + '_' + str(room_id))
     if not os.path.exists(OUTPUT_PATH):
         os.mkdir(OUTPUT_PATH)
 
     # load data
     room_data = np.loadtxt(room_file)
     output_label = room_data[:, -1]
+    # merge bridges into ground
+    bridge_idx = np.where(output_label == 26.0)[0]
+    output_label[bridge_idx] = 2.0
     output_data = np.zeros((room_data.shape[0], len(features_output)))
     test = np.unique(output_label)
     # select the output features

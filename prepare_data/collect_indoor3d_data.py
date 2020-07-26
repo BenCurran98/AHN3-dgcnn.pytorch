@@ -4,12 +4,12 @@ from tqdm import tqdm
 
 BASE_DIR = 'D:/Documents/Datasets/'  # base directory of datasets
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_RGB')
+DATA_PATH = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_NRI')
 
 anno_paths = [line.rstrip() for line in open(os.path.join(ROOT_DIR, 'meta/anno_paths.txt'))]
 # anno_paths = [os.path.join(DATA_PATH, p) for p in anno_paths]
 
-output_folder = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_RGB_NPY')
+output_folder = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_NRI_NPY')
 if not os.path.exists(output_folder):
     os.mkdir(output_folder)
 

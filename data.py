@@ -368,7 +368,7 @@ class S3DISDataset_eval(Dataset):  # load data block by block, without using h5 
             coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
             self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
             block_points, block_labels = indoor3d_util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
-                                                       stride=self.stride, random_sample=False, sample_num=None)
+                                                       stride=self.stride, random_sample=False, sample_num=None, use_all_points=self.use_all_points)
             room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
             self.room_points.append(block_points), self.room_labels.append(block_labels)
         self.room_points = np.concatenate(self.room_points)
@@ -382,9 +382,10 @@ class S3DISDataset_eval(Dataset):  # load data block by block, without using h5 
         selected_points = self.room_points[idx]   # num_point * 6
         current_labels = self.room_labels[idx]   # num_point
         center = np.mean(selected_points, axis=0)
+        N_points = selected_points.shape[0]
 
         # add normalized xyz
-        current_points = np.zeros((self.num_point, 9))  # num_point * 9
+        current_points = np.zeros((N_points, 9))  # num_point * 9
         current_points[:, 6] = selected_points[:, 0] / self.room_coord_max[room_idx][0]
         current_points[:, 7] = selected_points[:, 1] / self.room_coord_max[room_idx][1]
         current_points[:, 8] = selected_points[:, 2] / self.room_coord_max[room_idx][2]
