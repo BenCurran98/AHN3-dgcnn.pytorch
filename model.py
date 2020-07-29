@@ -33,7 +33,7 @@ def knn(x, k):
     return idx
 
 
-def get_graph_feature(x, k=20, idx=None, dim9=False):
+def get_graph_feature(x, k=20, idx=None, dim9=False, use_cuda=True):
     batch_size = x.size(0)
     num_points = x.size(2)
     x = x.view(batch_size, -1, num_points)
@@ -42,9 +42,14 @@ def get_graph_feature(x, k=20, idx=None, dim9=False):
             idx = knn(x, k=k)   # (batch_size, num_points, k)
         else:
             idx = knn(x[:, 6:], k=k)
-    device = torch.device('cuda')
+
+    if use_cuda:
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
 
     idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
+    idx = idx.to(device)
 
     idx = idx + idx_base
 
@@ -318,6 +323,7 @@ class DGCNN_semseg(nn.Module):
         self.args = args
         self.k = args.k
         self.num_classes = args.num_classes
+        self.use_cuda = args.cuda
         
         self.bn1 = nn.BatchNorm2d(64)
         self.bn2 = nn.BatchNorm2d(64)
@@ -360,17 +366,17 @@ class DGCNN_semseg(nn.Module):
         batch_size = x.size(0)
         num_points = x.size(2)
 
-        x = get_graph_feature(x, k=self.k, dim9=True)   # (batch_size, 9, num_points) -> (batch_size, 9*2, num_points, k)
+        x = get_graph_feature(x, k=self.k, dim9=True, use_cuda=self.use_cuda)   # (batch_size, 9, num_points) -> (batch_size, 9*2, num_points, k)
         x = self.conv1(x)                       # (batch_size, 9*2, num_points, k) -> (batch_size, 64, num_points, k)
         x = self.conv2(x)                       # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points, k)
         x1 = x.max(dim=-1, keepdim=False)[0]    # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points)
 
-        x = get_graph_feature(x1, k=self.k)     # (batch_size, 64, num_points) -> (batch_size, 64*2, num_points, k)
+        x = get_graph_feature(x1, k=self.k, use_cuda=self.use_cuda)     # (batch_size, 64, num_points) -> (batch_size, 64*2, num_points, k)
         x = self.conv3(x)                       # (batch_size, 64*2, num_points, k) -> (batch_size, 64, num_points, k)
         x = self.conv4(x)                       # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points, k)
         x2 = x.max(dim=-1, keepdim=False)[0]    # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points)
 
-        x = get_graph_feature(x2, k=self.k)     # (batch_size, 64, num_points) -> (batch_size, 64*2, num_points, k)
+        x = get_graph_feature(x2, k=self.k, use_cuda=self.use_cuda)     # (batch_size, 64, num_points) -> (batch_size, 64*2, num_points, k)
         x = self.conv5(x)                       # (batch_size, 64*2, num_points, k) -> (batch_size, 64, num_points, k)
         x3 = x.max(dim=-1, keepdim=False)[0]    # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points)
 

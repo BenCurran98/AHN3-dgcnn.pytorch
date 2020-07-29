@@ -273,7 +273,10 @@ def test(args, io):
                 raise Exception("Not implemented")
 
             model = nn.DataParallel(model)
-            checkpoint = torch.load(os.path.join(args.model_root, 'model_%s.t7' % args.test_area))
+            if args.cuda:
+                checkpoint = torch.load(os.path.join(args.model_root, 'model_%s.t7' % args.test_area))
+            else:
+                checkpoint = torch.load(os.path.join(args.model_root, 'model_%s.t7' % args.test_area), map_location=torch.device('cpu'))
             model.load_state_dict(checkpoint['model_state_dict'])
             model = model.eval()
 
@@ -319,6 +322,7 @@ def test(args, io):
                             pts[i, 6]*dataset.room_coord_max[room_id][0], pts[i, 7]*dataset.room_coord_max[room_id][1], pts[i, 8]*dataset.room_coord_max[room_id][2],
                             pts[i, 3], pts[i, 4], pts[i, 5], pred_[i], l[i], logits[i, 0], logits[i, 1], logits[i, 2], logits[i, 3]))  # xyzRGB pred gt
                 num_batch += batch_size
+                torch.cuda.empty_cache()
 
             for room_id in np.unique(room_idx):
                 fout_data_label[room_id].close()
