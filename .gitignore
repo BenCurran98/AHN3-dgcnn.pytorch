@@ -4,8 +4,5 @@
 __pycache__
 data
 checkpoints
-log_tensorboard_30m_np
-log_tensorboard_NRI_30m_1m_k20
-log_tensorboard_NRI_30m_1m_k20_5cls
-log_tensorboard_NRI_50m_1m_k20
-log_tensorboard_NRI_70m_1m_k20
+log_tensorboard_*
+*.sbatch
