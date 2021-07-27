@@ -17,7 +17,7 @@ g_class2label = {cls: i for i, cls in enumerate(g_classes)}
 g_class2color = {'vegetation': [0, 255, 0],
                  'ground': [0, 0, 255],
                  'building': [0, 255, 255],
-                 'water': [255, 255, 0]}
+                 'noise': [255, 255, 255]}
 g_easy_view_labels = [7, 8, 9, 10, 11, 1]  # todo:
 g_label2color = {g_classes.index(cls): g_class2color[cls] for cls in g_classes}
 

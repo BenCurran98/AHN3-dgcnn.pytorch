@@ -366,11 +366,11 @@ def test(args, io):
 if __name__ == "__main__":
     # Training settings
     parser = argparse.ArgumentParser(description='Point Cloud Semantic Segmentation')
-    parser.add_argument('--data_dir', type=str, default='data/AHN3_as_S3DIS_RGB_NPY',
+    parser.add_argument('--data_dir', type=str, default='/home/ubuntu/Datasets/powercor_as_S3DIS_NRI_NPY',
                         help='Directory of data')
     parser.add_argument('--tb_dir', type=str, default='log_tensorboard',
                         help='Directory of tensorboard logs')
-    parser.add_argument('--exp_name', type=str, default='RGB_30m_50epochs_p100', metavar='N',
+    parser.add_argument('--exp_name', type=str, default='powercor_integration_50epochs_p100', metavar='N',
                         help='Name of the experiment')
     parser.add_argument('--model', type=str, default='dgcnn', metavar='N',
                         choices=['dgcnn'],

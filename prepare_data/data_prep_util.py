@@ -141,5 +141,3 @@ def pad_arr_rows(arr, row, pad='edge'):
         return np.lib.pad(arr, ((0, row-arr.shape[0]), (0, 0)), 'edge')
     if pad == 'constant':
         return np.lib.pad(arr, ((0, row-arr.shape[0]), (0, 0)), 'constant', (0, 0))
-
-

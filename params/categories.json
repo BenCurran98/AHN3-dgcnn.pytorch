@@ -1,0 +1,6 @@
+{
+    "0.0": "noise",
+    "2.0":  "ground",
+    "5.0":  "vegetation",
+    "6.0":  "building"
+}

@@ -6,3 +6,4 @@ data
 checkpoints
 log_tensorboard_*
 *.sbatch
+log_tensorboard

@@ -1,0 +1,17 @@
+{
+    "X": 0,
+    "Y": 1,
+    "Z": 2,
+    "R": 3,
+    "G": 4,
+    "B": 5,
+    "PointSourceId": 6,
+    "UserData": 7,
+    "ScanAngleRank": 8,
+    "EdgeOfFlightLine": 9,
+    "NumberOfReturns": 10,
+    "ReturnNumber": 11,
+    "GpsTime": 12,
+    "Intensity": 13,
+    "Class": 14
+}
