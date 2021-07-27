@@ -326,7 +326,8 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
 
             # might still have a few points leftover- just pick some random ones
             not_assigned = [idx for idx in range(len(labels) + 1) if idx not in selected_point_idxs]
-            selected_point_idxs[start_idx:-1] = np.random.choice(not_assigned, self.num_point - start_idx, replace = False)
+            selected_point_idxs[start_idx:len(selected_point_idxs)] = np.random.choice(not_assigned, self.num_point - start_idx, replace = False)
+            selected_point_idxs = [int(i) for i in selected_point_idxs]
 
             # while (True):
             #     center = points[np.random.choice(N_points)][:3]
