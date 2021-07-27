@@ -18,7 +18,7 @@ def write_anno_paths(base_dir, root_dir, data_path):
 
     with open(os.path.join(root_dir, 'meta/anno_paths.txt'), 'w+') as anno_paths:
         paths = []
-        for path in glob.glob(base_dir + '/powercor_processed/*/Annotations'):
+        for path in glob.glob(base_dir + '/powercor_processed/*/*/Annotations'):
             path = path.replace('\\', '/')
             paths.append(path)
         paths = np.array(paths)
