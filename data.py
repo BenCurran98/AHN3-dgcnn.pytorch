@@ -272,7 +272,7 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         self.num_thre = num_thre
         rooms = sorted(os.listdir(data_root))
         rooms = [room for room in rooms if 'Area_' in room]
-        test_areas = np.random.choice(range(len(rooms)), int(np.floor(len(rooms) * 0.2)), replace = False)
+        test_areas = np.random.choice(range(len(rooms)), int(np.floor(len(rooms) * 1/3)), replace = False)
         rooms_split = [room for room in rooms if not any(['Area_{}'.format(test_area) in room for test_area in test_areas])]
         self.room_points, self.room_labels = [], []
         self.room_coord_min, self.room_coord_max = [], []
@@ -291,7 +291,7 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         labelweights = labelweights.astype(np.float32)
         labelweights = labelweights / np.sum(labelweights)
         self.labelweights = np.power(np.amax(labelweights) / labelweights, 1 / 3.0)
-        print(self.labelweights)
+        print('label weights: ', self.labelweights)
         sample_prob = num_point_all / np.sum(num_point_all)
         num_iter = int(np.sum(num_point_all) * sample_rate / num_point)
         room_idxs = []
@@ -307,39 +307,22 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         N_points = points.shape[0]
 
         if self.use_all_points:
+            print('Using all points!')
             center = np.mean(points[:, :3], axis=0)
             selected_point_idxs = np.arange(N_points)
 
         else:
-            # need to balance points based on class
-            classes = np.unique(labels)
-            num_point_per_class = int(np.floor(self.num_point/len(classes)))
-            selected_point_idxs = -1 * np.ones(self.num_point)
-            start_idx = 0
-            for label in classes:
-                this_class_idxs = np.where(labels == label)[0]
-                num_selected = min(num_point_per_class, len(this_class_idxs))
-                selected_point_idxs[start_idx:start_idx + num_selected] = np.random.choice(this_class_idxs, num_selected, replace = False)
-                # else:
-                #     selected_point_idxs[start_idx:start_idx + num_selected] = this_class_idxs[]
-                start_idx += num_selected
-
-            # might still have a few points leftover- just pick some random ones
-            not_assigned = [idx for idx in range(len(labels) + 1) if idx not in selected_point_idxs]
-            selected_point_idxs[start_idx:len(selected_point_idxs)] = np.random.choice(not_assigned, self.num_point - start_idx, replace = False)
-            selected_point_idxs = [int(i) for i in selected_point_idxs]
-
-            # while (True):
-            #     center = points[np.random.choice(N_points)][:3]
-            #     block_min = center - [self.block_size / 2.0, self.block_size / 2.0, 0]
-            #     block_max = center + [self.block_size / 2.0, self.block_size / 2.0, 0]
-            #     point_idxs = np.where((points[:, 0] >= block_min[0]) & (points[:, 0] <= block_max[0]) & (points[:, 1] >= block_min[1]) & (points[:, 1] <= block_max[1]))[0]
-            #     if point_idxs.size >= self.num_thre:
-            #         break
-            # if point_idxs.size >= self.num_point:
-            #     selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=False)
-            # else:
-            #     selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=True)
+            while (True):
+                center = points[np.random.choice(N_points)][:3]
+                block_min = center - [self.block_size / 2.0, self.block_size / 2.0, 0]
+                block_max = center + [self.block_size / 2.0, self.block_size / 2.0, 0]
+                point_idxs = np.where((points[:, 0] >= block_min[0]) & (points[:, 0] <= block_max[0]) & (points[:, 1] >= block_min[1]) & (points[:, 1] <= block_max[1]))[0]
+                if point_idxs.size >= self.num_thre:
+                    break
+            if point_idxs.size >= self.num_point:
+                selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=False)
+            else:
+                selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=True)
 
         # add normalized xyz
         center = points[np.random.choice(N_points)][:3]

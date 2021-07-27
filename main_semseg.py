@@ -58,7 +58,7 @@ def train(args, io):
     train_loader = DataLoader(
         S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points,
                      block_size=args.block_size,
-                     sample_rate=1.5, num_class=args.num_classes), num_workers=8, batch_size=args.batch_size,
+                     sample_rate=1.5, num_class=args.num_classes, use_all_points = args.use_all_points), num_workers=8, batch_size=args.batch_size,
         shuffle=True, drop_last=True)
 
     test_loader = DataLoader(
@@ -131,6 +131,7 @@ def train(args, io):
         train_label_seg = []
 
         io.cprint('Start training for Epoch %d ...' % epoch)
+        print('L: ', len(train_loader))
         for data, seg in tqdm(train_loader):
             data, seg = data.to(device), seg.to(device)
             data = data.permute(0, 2, 1).float()
@@ -366,7 +367,8 @@ def test(args, io):
 if __name__ == "__main__":
     # Training settings
     parser = argparse.ArgumentParser(description='Point Cloud Semantic Segmentation')
-    parser.add_argument('--data_dir', type=str, default='/home/ubuntu/Datasets/powercor_as_S3DIS_NRI_NPY',
+    # parser.add_argument('--data_dir', type=str, default='/home/ubuntu/Datasets/powercor_as_S3DIS_NRI_NPY',
+    parser.add_argument('--data_dir', type=str, default='/media/ben/T7 Touch/InnovationConference/Datasets/powercor_as_S3DIS_NRI_NPY',
                         help='Directory of data')
     parser.add_argument('--tb_dir', type=str, default='log_tensorboard',
                         help='Directory of tensorboard logs')
@@ -389,6 +391,8 @@ if __name__ == "__main__":
                         help='Size of batch)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of episode to train ')
+    parser.add_argument('--use_all_points', type=bool, default=True, metavar='N',
+                        help='Whether to use all points in block')
     parser.add_argument('--use_sgd', type=bool, default=False,
                         help='Use SGD')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
