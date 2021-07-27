@@ -272,7 +272,7 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         self.num_thre = num_thre
         rooms = sorted(os.listdir(data_root))
         rooms = [room for room in rooms if 'Area_' in room]
-        test_areas = np.random.choice(range(len(rooms)), np.floor(len(rooms) * 0.2), replace = False)
+        test_areas = np.random.choice(range(len(rooms)), int(np.floor(len(rooms) * 0.2)), replace = False)
         rooms_split = [room for room in rooms if not any(['Area_{}'.format(test_area) in room for test_area in test_areas])]
         self.room_points, self.room_labels = [], []
         self.room_coord_min, self.room_coord_max = [], []
@@ -313,7 +313,7 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         else:
             # need to balance points based on class
             classes = np.unique(labels)
-            num_point_per_class = np.floor(self.num_point/len(classes))
+            num_point_per_class = int(np.floor(self.num_point/len(classes)))
             selected_point_idxs = -1 * np.ones(self.num_point)
             start_idx = 0
             for label in classes:
