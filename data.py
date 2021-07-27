@@ -342,6 +342,7 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
             #     selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=True)
 
         # add normalized xyz
+        center = points[np.random.choice(N_points)][:3]
         selected_points = points[selected_point_idxs, :]  # num_point * 6
         current_points = np.zeros((self.num_point, 9))  # num_point * 9
         current_points[:, 6] = selected_points[:, 0] / self.room_coord_max[room_idx][0]
