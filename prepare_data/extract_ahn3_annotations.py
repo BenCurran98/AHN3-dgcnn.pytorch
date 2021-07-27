@@ -33,7 +33,6 @@ def extract_annotations(area_id, area, data_folder, output_path, categories, fea
         os.mkdir(output_path)
 
     for room_id, room_file in tqdm(enumerate(glob.iglob(os.path.join(data_folder, '*.txt')))):  # read each tiled point cloud
-        print("room = ", room_file)
         room_id += 1
         output_path = orig_output_path
         output_path = os.path.join(output_path, 'Area_' + str(room_id))

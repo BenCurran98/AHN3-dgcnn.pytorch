@@ -22,7 +22,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
 import sklearn.metrics as metrics
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 
@@ -110,11 +110,11 @@ def train(args, io):
     if not os.path.exists(log_dir):
         os.mkdir(log_dir)
 
-    writer_train_loss = SummaryWriter(os.path.join(log_dir, 'train_loss'))
-    writer_train_accuracy = SummaryWriter(os.path.join(log_dir))
-    writer_train_iou = SummaryWriter(os.path.join(log_dir))
-    writer_test_accuracy = SummaryWriter(os.path.join(log_dir))
-    writer_test_iou = SummaryWriter(os.path.join(log_dir))
+    # writer_train_loss = SummaryWriter(os.path.join(log_dir, 'train_loss'))
+    # writer_train_accuracy = SummaryWriter(os.path.join(log_dir))
+    # writer_train_iou = SummaryWriter(os.path.join(log_dir))
+    # writer_test_accuracy = SummaryWriter(os.path.join(log_dir))
+    # writer_test_iou = SummaryWriter(os.path.join(log_dir))
 
     for epoch in range(start_epoch, args.epochs):
         ####################
@@ -145,7 +145,7 @@ def train(args, io):
             count += batch_size
             train_loss += loss.item() * batch_size
             niter += batch_size
-            writer_train_loss.add_scalar('Train/loss', loss.item(), niter)
+            # writer_train_loss.add_scalar('Train/loss', loss.item(), niter)
             seg_np = seg.cpu().numpy()  # (batch_size, num_points)
             pred_np = pred.detach().cpu().numpy()  # (batch_size, num_points)
             train_true_cls.append(seg_np.reshape(-1))  # (batch_size * num_points)
@@ -173,8 +173,8 @@ def train(args, io):
                                                                                                   avg_per_class_acc,
                                                                                                   np.mean(train_ious))
         io.cprint(outstr)
-        writer_train_accuracy.add_scalar('Train/accuracy', train_acc, epoch)
-        writer_train_iou.add_scalar('Train/mIOU', np.mean(train_ious), epoch)
+        # writer_train_accuracy.add_scalar('Train/accuracy', train_acc, epoch)
+        # writer_train_iou.add_scalar('Train/mIOU', np.mean(train_ious), epoch)
 
         ####################
         # Test
@@ -217,8 +217,8 @@ def train(args, io):
                                                                                               avg_per_class_acc,
                                                                                               np.mean(test_ious))
         io.cprint(outstr)
-        writer_test_accuracy.add_scalar('Test/accuracy', test_acc, epoch)
-        writer_test_iou.add_scalar('Test/mIOU', np.mean(test_ious), epoch)
+        # writer_test_accuracy.add_scalar('Test/accuracy', test_acc, epoch)
+        # writer_test_iou.add_scalar('Test/mIOU', np.mean(test_ious), epoch)
 
         if np.mean(test_ious) >= best_test_iou:
             best_test_iou = np.mean(test_ious)
@@ -233,11 +233,11 @@ def train(args, io):
             }
             torch.save(state, savepath)
 
-    writer_train_loss.close()
-    writer_train_accuracy.close()
-    writer_train_iou.close()
-    writer_test_accuracy.close()
-    writer_test_iou.close()
+    # writer_train_loss.close()
+    # writer_train_accuracy.close()
+    # writer_train_iou.close()
+    # writer_test_accuracy.close()
+    # writer_test_iou.close()
 
 
 def test(args, io):
@@ -366,7 +366,7 @@ def test(args, io):
 if __name__ == "__main__":
     # Training settings
     parser = argparse.ArgumentParser(description='Point Cloud Semantic Segmentation')
-    parser.add_argument('--data_dir', type=str, default='/home/ubuntu/Datasets/powercor_as_S3DIS_NRI_NPY',
+    parser.add_argument('--data_dir', type=str, default='/media/ben/T7 Touch/InnovationConference/Datasets/powercor_as_S3DIS_NRI_NPY',
                         help='Directory of data')
     parser.add_argument('--tb_dir', type=str, default='log_tensorboard',
                         help='Directory of tensorboard logs')
