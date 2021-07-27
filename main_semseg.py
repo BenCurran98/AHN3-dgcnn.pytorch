@@ -56,13 +56,13 @@ def train(args, io):
 
     # sample_rate=1.5 to make sure some overlap
     train_loader = DataLoader(
-        S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area,
+        S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points,
                      block_size=args.block_size,
                      sample_rate=1.5, num_class=args.num_classes), num_workers=8, batch_size=args.batch_size,
         shuffle=True, drop_last=True)
 
     test_loader = DataLoader(
-        S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area,
+        S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points,
                      block_size=args.block_size,
                      sample_rate=1.5, num_class=args.num_classes), num_workers=8, batch_size=args.test_batch_size,
         shuffle=True, drop_last=True)

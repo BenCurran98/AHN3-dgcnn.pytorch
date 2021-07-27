@@ -12,7 +12,7 @@ from tqdm import tqdm
 import argparse
 
 AREA_ID = 1
-AREA = 'some_tile'  # 1: 38FN1, 2: 37EN2, 3: 32CN1, 4: 31HZ2
+AREA = 'Training'  # 1: 38FN1, 2: 37EN2, 3: 32CN1, 4: 31HZ2
 
 # BASE_DIR = '/home/ubuntu/Datasets/'
 BASE_DIR = os.path.join(os.getcwd(), '..' '/Datasets')

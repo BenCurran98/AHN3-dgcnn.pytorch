@@ -264,7 +264,7 @@ class S3DIS(Dataset):
 
 
 class S3DISDataset(Dataset):  # load data block by block, without using h5 files
-    def __init__(self, split='train', data_root='trainval_fullarea', num_point=4096, test_area='5', block_size=1.0, sample_rate=1.0, num_class=20, use_all_points=False, num_thre = 1024):
+    def __init__(self, split='train', data_root='trainval_fullarea', num_point=4096, block_size=1.0, sample_rate=1.0, num_class=20, use_all_points=False, num_thre = 1024):
         super().__init__()
         self.num_point = num_point
         self.block_size = block_size
@@ -272,10 +272,8 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         self.num_thre = num_thre
         rooms = sorted(os.listdir(data_root))
         rooms = [room for room in rooms if 'Area_' in room]
-        if split == 'train':
-            rooms_split = [room for room in rooms if not 'Area_{}'.format(test_area) in room]
-        else:
-            rooms_split = [room for room in rooms if 'Area_{}'.format(test_area) in room]
+        test_areas = np.random.choice(range(len(rooms)), np.floor(len(rooms) * 0.2), replace = False)
+        rooms_split = [room for room in rooms if not any(['Area_{}'.format(test_area) in room for test_area in test_areas])]
         self.room_points, self.room_labels = [], []
         self.room_coord_min, self.room_coord_max = [], []
         num_point_all = []
