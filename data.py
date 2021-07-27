@@ -318,8 +318,9 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
             start_idx = 0
             for label in classes:
                 this_class_idxs = np.where(labels == label)
-                selected_point_idxs[start_idx:start_idx + num_point_per_class] = np.random.choice(this_class_idxs, num_point_per_class, replace = False)
-                start_idx += num_point_per_class
+                num_selected = min(num_point_per_class, len(this_class_idxs))
+                selected_point_idxs[start_idx:start_idx + num_point_per_class] = np.random.choice(this_class_idxs, num_selected, replace = False)
+                start_idx += num_selected
 
             # might still have a few points leftover- just pick some random ones
             not_assigned = [idx for idx in range(len(labels) + 1) if idx not in selected_point_idxs]

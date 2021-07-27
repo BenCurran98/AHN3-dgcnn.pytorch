@@ -45,7 +45,10 @@ def collect_point_label(anno_path, out_filename, file_format='txt'):
         cls = os.path.basename(f).split('.')[0] # TODO: '_', changed because points in the same class are not separated
         if cls not in g_classes:  # note: in some room there is 'staris' class..
             cls = 'clutter'
+        
         points = np.loadtxt(f)
+        if len(points.shape) == 1:
+            points = np.reshape(points, (1, points.shape[0]))
         labels = np.ones((points.shape[0], 1)) * g_class2label[cls]
         points_list.append(np.concatenate([points, labels], 1))  # Nx7
 
