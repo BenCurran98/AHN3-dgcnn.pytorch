@@ -40,6 +40,10 @@ def extract_annotations(area_id, area, data_folder, output_path, categories, fea
         if not os.path.exists(output_path):
             os.mkdir(output_path)
 
+        output_path = os.path.join(output_path, area)
+        if not os.path.exists(output_path):
+            os.mkdir(output_path)
+
         # load data
         room_data = np.loadtxt(room_file)
         output_label = room_data[:, -1]
@@ -72,7 +76,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Extract point cloud data')
     parser.add_argument('--base_dir', type = str, default = BASE_DIR, help = 'Base directory of data')
     parser.add_argument('--area_id', type = int, default = AREA_ID, help = 'ID of the area to extract')
-    parser.add_argument('--area', type = str, default = 'Area', help = 'Name of area to process')
+    parser.add_argument('--area', type = str, default = AREA, help = 'Name of area to process')
     parser.add_argument('--data_folder', type = str, default = DATA_FOLDER, help = 'Folder containing the complete datasets')
     parser.add_argument('--categories_file', type = str, default = 'params/categories.json', help = 'JSON file containing label mappings')
     parser.add_argument('--features_file', type = str, default = 'params/features.json', help = 'JSON file containing index mappings of LiDAR features')
