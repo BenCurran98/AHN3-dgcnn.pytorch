@@ -53,7 +53,8 @@ def calculate_sem_IoU(pred_np, seg_np, num_classes):  # num_classes: S3DIS 13
 
 def train(args, io):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
+    torch.set_num_threads(56)
+    torch.set_num_interop_threads(8)
     # sample_rate=1.5 to make sure some overlap
     train_loader = DataLoader(
         S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points,
