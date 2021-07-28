@@ -391,7 +391,7 @@ if __name__ == "__main__":
                         help='Size of batch)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of episode to train ')
-    parser.add_argument('--use_all_points', type=bool, default=True, metavar='N',
+    parser.add_argument('--use_all_points', type=bool, default=False, metavar='N',
                         help='Whether to use all points in block')
     parser.add_argument('--use_sgd', type=bool, default=False,
                         help='Use SGD')

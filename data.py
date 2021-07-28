@@ -16,6 +16,7 @@ Modified by
 import os
 import sys
 import glob
+import threading
 import h5py
 import numpy as np
 import torch
@@ -303,11 +304,13 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
     def __getitem__(self, idx):  # get items in one block
         room_idx = self.room_idxs[idx]
         points = self.room_points[room_idx]   # N * 6
+
         labels = self.room_labels[room_idx]   # N
+
         N_points = points.shape[0]
 
         if self.use_all_points:
-            print('Using all points!')
+            self.num_point = N_points
             center = np.mean(points[:, :3], axis=0)
             selected_point_idxs = np.arange(N_points)
 
