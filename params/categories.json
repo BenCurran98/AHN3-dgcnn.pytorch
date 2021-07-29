@@ -1,6 +1,7 @@
 {
-    "0.0": "noise",
-    "2.0":  "ground",
-    "5.0":  "vegetation",
-    "6.0":  "building"
+    "0.0": "other",
+    "1.0": "ground",
+    "3.0": "vegetation",
+    "5.0": "building",
+    "7.0": "noise"
 }
