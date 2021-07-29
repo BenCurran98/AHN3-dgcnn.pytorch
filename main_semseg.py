@@ -259,9 +259,12 @@ def test(args, io):
 
             fout_data_label = []
             for room_id in np.unique(room_idx):
+                print('room id: ', room_id)
                 out_data_label_filename = 'Area_%s_room_%d_pred_gt.txt' % (test_area, room_id)
                 out_data_label_filename = os.path.join(DUMP_DIR, out_data_label_filename)
-                fout_data_label.append(open(out_data_label_filename, 'w+'))
+                if os.path.isfile(out_data_label_filename):
+                    os.remove(out_data_label_filename)
+                fout_data_label.append(open(out_data_label_filename, 'a'))
 
             device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -306,7 +309,6 @@ def test(args, io):
                 test_pred_cls.append(pred_np.reshape(-1))
                 test_true_seg.append(seg_np)
                 test_pred_seg.append(pred_np)
-                print(np.array(seg_np).shape)
 
                 # write prediction results
                 for batch_id in range(batch_size):
@@ -367,9 +369,10 @@ def test(args, io):
 if __name__ == "__main__":
     # Training settings
     parser = argparse.ArgumentParser(description='Point Cloud Semantic Segmentation')
-    # parser.add_argument('--data_dir', type=str, default='/home/ubuntu/Datasets/powercor_as_S3DIS_NRI_NPY',
-    parser.add_argument('--data_dir', type=str, default='/media/ben/T7 Touch/InnovationConference/Datasets/powercor_as_S3DIS_NRI_NPY',
+    parser.add_argument('--data_dir', type=str, default='/home/ubuntu/Datasets/powercor_as_S3DIS_NRI_NPY',
                         help='Directory of data')
+    # parser.add_argument('--data_dir', type=str, default='/media/ben/T7 Touch/InnovationConference/Datasets/powercor_as_S3DIS_NRI_NPY',
+                        # help='Directory of data')
     parser.add_argument('--tb_dir', type=str, default='log_tensorboard',
                         help='Directory of tensorboard logs')
     parser.add_argument('--exp_name', type=str, default='powercor_integration_50epochs_p100', metavar='N',

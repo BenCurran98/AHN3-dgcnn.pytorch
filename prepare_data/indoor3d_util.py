@@ -17,7 +17,8 @@ g_class2label = {cls: i for i, cls in enumerate(g_classes)}
 g_class2color = {'vegetation': [0, 255, 0],
                  'ground': [0, 0, 255],
                  'building': [0, 255, 255],
-                 'noise': [255, 255, 255]}
+                 'other': [255, 255, 255],
+                 'noise': [0, 0, 0]}
 g_easy_view_labels = [7, 8, 9, 10, 11, 1]  # todo:
 g_label2color = {g_classes.index(cls): g_class2color[cls] for cls in g_classes}
 
@@ -44,7 +45,7 @@ def collect_point_label(anno_path, out_filename, file_format='txt'):
     for f in glob.glob(os.path.join(anno_path, '*.txt')):
         cls = os.path.basename(f).split('.')[0] # TODO: '_', changed because points in the same class are not separated
         if cls not in g_classes:  # note: in some room there is 'staris' class..
-            cls = 'clutter'
+            cls = 'noise'
         
         points = np.loadtxt(f)
         if len(points.shape) == 1:

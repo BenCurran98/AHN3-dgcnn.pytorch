@@ -302,6 +302,7 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
 
     def __getitem__(self, idx):  # get items in one block
+        # print('here: ', threading.current_thread().ident)
         room_idx = self.room_idxs[idx]
         points = self.room_points[room_idx]   # N * 6
 
@@ -359,7 +360,10 @@ class S3DISDataset_eval(Dataset):  # load data block by block, without using h5 
         if split == 'train':
             rooms_split = [room for room in rooms if not 'Area_{}'.format(test_area) in room]
         else:
-            rooms_split = [room for room in rooms if 'Area_{}'.format(test_area) in room]
+            if test_area == 'all':
+                rooms_split = rooms
+            else:
+                rooms_split = [room for room in rooms if 'Area_{}'.format(test_area) in room]
         self.room_points, self.room_labels = [], []
         self.room_coord_min, self.room_coord_max = [], []
 

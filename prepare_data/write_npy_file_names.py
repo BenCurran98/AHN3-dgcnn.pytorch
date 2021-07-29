@@ -27,7 +27,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Extract point cloud data')
     parser.add_argument('--base_dir', type = str, default = BASE_DIR, help = 'Base directory of data')
     parser.add_argument('--root_dir', type = str, default = ROOT_DIR, help = 'Root directory of data')
-    parser.add_argument('-data_path', type = str, default = DATA_PATH, help = 'Folder containing pointcloud text data')
+    parser.add_argument('--data_path', type = str, default = DATA_PATH, help = 'Folder containing pointcloud text data')
     
     args = parser.parse_args()
     write_npy_file_names(args.base_dir, args.root_dir, args.data_path)
