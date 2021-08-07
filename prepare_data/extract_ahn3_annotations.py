@@ -64,6 +64,7 @@ def extract_annotations(area_id, area, data_folder, output_path, categories, fea
             os.mkdir(ANNO_PATH)
 
         eff_categories = np.unique(output_label)
+        print(eff_categories)
         for category in eff_categories:
             # find corresponding classes
             category_indices = np.where(output_label == category)[0]

@@ -273,8 +273,15 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         self.num_thre = num_thre
         rooms = sorted(os.listdir(data_root))
         rooms = [room for room in rooms if 'Area_' in room]
-        test_areas = np.random.choice(range(len(rooms)), int(np.floor(len(rooms) * 1/3)), replace = False)
-        rooms_split = [room for room in rooms if not any(['Area_{}'.format(test_area) in room for test_area in test_areas])]
+        # test_areas = [1]
+        print("NT: ", int(np.floor(len(rooms) * 1/8)))
+        test_areas = np.random.choice(range(len(rooms)), int(np.floor(len(rooms) * 1/8)), replace = False)
+        if split == "train":
+            rooms_split = [room for room in rooms if not any(['Area_{}'.format(test_area) in room for test_area in test_areas])]
+        else:
+            rooms_split = [rooms[i] for i in test_areas]
+        print("RS: ", len(rooms_split))
+        print("TS: ", len(test_areas))
         self.room_points, self.room_labels = [], []
         self.room_coord_min, self.room_coord_max = [], []
         num_point_all = []
@@ -294,7 +301,9 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
         self.labelweights = np.power(np.amax(labelweights) / labelweights, 1 / 3.0)
         print('label weights: ', self.labelweights)
         sample_prob = num_point_all / np.sum(num_point_all)
+        # print("SP: ", sample_prob)
         num_iter = int(np.sum(num_point_all) * sample_rate / num_point)
+        # print("NI: ", num_iter)
         room_idxs = []
         for index in range(len(rooms_split)):
             room_idxs.extend([index] * int(round(sample_prob[index] * num_iter)))  # extend with number of blocks in a room
@@ -310,6 +319,33 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
 
         N_points = points.shape[0]
 
+        n_labs = range(int(np.max(np.unique(labels)) + 1))
+        class_points = [[labels[i] for i in range(len(labels)) if labels[i] == j] for j in n_labs]
+        class_lens = [len(class_points[i]) for i in n_labs]
+        tot = sum(class_lens)
+        shuf_nums = np.array([tot - i for i in class_lens])
+        tot = sum(shuf_nums)
+        weights = shuf_nums/tot
+        weights.astype('float64')
+        weights /= weights.sum()
+        # tmp_weights = [class_lens[i]/tot for i in n_labs]
+        # max_w = np.max(tmp_weights)
+
+        # weights = [1 - weights[i] for i in n_labs]
+        # weights = [weights[i]/sum(weights) for i in n_labs]
+
+        point_weights = np.zeros(len(labels))
+        # print(np.unique(labels))
+        # print("Weights: ", weights)
+        # print("SW: ", sum(weights))
+        for i in range(len(labels)):
+            point_weights[i] = weights[int(labels[i])]
+        point_weights /= point_weights.sum()
+        if np.isnan(sum(point_weights)):
+            point_weights = [1/len(labels) for i in range(len(labels))]
+        # print("PW: ", sum(point_weights))
+
+
         if self.use_all_points:
             self.num_point = N_points
             center = np.mean(points[:, :3], axis=0)
@@ -317,16 +353,20 @@ class S3DISDataset(Dataset):  # load data block by block, without using h5 files
 
         else:
             while (True):
-                center = points[np.random.choice(N_points)][:3]
+                center = points[np.random.choice(N_points, p = point_weights)][:3]
                 block_min = center - [self.block_size / 2.0, self.block_size / 2.0, 0]
                 block_max = center + [self.block_size / 2.0, self.block_size / 2.0, 0]
                 point_idxs = np.where((points[:, 0] >= block_min[0]) & (points[:, 0] <= block_max[0]) & (points[:, 1] >= block_min[1]) & (points[:, 1] <= block_max[1]))[0]
                 if point_idxs.size >= self.num_thre:
                     break
             if point_idxs.size >= self.num_point:
-                selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=False)
+                this_pw = p = point_weights[point_idxs]
+                this_pw /= this_pw.sum()
+                selected_point_idxs = np.random.choice(point_idxs, self.num_point, p=this_pw, replace=False)
             else:
-                selected_point_idxs = np.random.choice(point_idxs, self.num_point, replace=True)
+                this_pw = p = point_weights[point_idxs]
+                this_pw /= this_pw.sum()
+                selected_point_idxs = np.random.choice(point_idxs, self.num_point, p = this_pw, replace=True)
 
         # add normalized xyz
         center = points[np.random.choice(N_points)][:3]
@@ -352,6 +392,7 @@ class S3DISDataset_eval(Dataset):  # load data block by block, without using h5 
         super().__init__()
         self.num_point = num_point
         self.block_size = block_size
+        
         self.use_all_points = use_all_points
         self.stride = stride
         self.num_thre = num_thre
@@ -372,16 +413,19 @@ class S3DISDataset_eval(Dataset):  # load data block by block, without using h5 
             room_path = os.path.join(data_root, room_name)
             room_data = np.load(room_path)
             points, labels = room_data[:, 0:6], room_data[:, 6]
+            # print("Total labels: ", len(labels))
             coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
             self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
             block_points, block_labels = indoor3d_util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
                                                        stride=self.stride, random_sample=False, sample_num=None, use_all_points=self.use_all_points)
+            # print("Block labels: ", block_labels.shape)
             room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
             self.room_points.append(block_points), self.room_labels.append(block_labels)
         self.room_points = np.concatenate(self.room_points)
         self.room_labels = np.concatenate(self.room_labels)
 
         self.room_idxs = np.array(room_idxs)
+        print("Rooms: ", self.room_idxs)
         print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
 
     def __getitem__(self, idx):  # get items in one block

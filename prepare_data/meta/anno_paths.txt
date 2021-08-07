@@ -1,6 +1,6 @@
-/media/ben/T7 Touch/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_1/some_tile/Annotations
-/media/ben/T7 Touch/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_2/some_tile/Annotations
-/media/ben/T7 Touch/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_3/some_tile/Annotations
-/media/ben/T7 Touch/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_4/some_tile/Annotations
-/media/ben/T7 Touch/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_5/some_tile/Annotations
-/media/ben/T7 Touch/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_6/some_tile/Annotations
+/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_1/Training/Annotations
+/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_6/Training/Annotations
+/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_5/Training/Annotations
+/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_4/Training/Annotations
+/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_2/Training/Annotations
+/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_3/Training/Annotations

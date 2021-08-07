@@ -1,6 +1,6 @@
-Area_1_some_tile.npy
-Area_2_some_tile.npy
-Area_3_some_tile.npy
-Area_4_some_tile.npy
-Area_5_some_tile.npy
-Area_6_some_tile.npy
+Area_2_Training.npy
+Area_6_Training.npy
+Area_1_Training.npy
+Area_5_Training.npy
+Area_4_Training.npy
+Area_3_Training.npy

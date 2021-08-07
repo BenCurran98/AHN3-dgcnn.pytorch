@@ -22,8 +22,9 @@ import numpy as np
 from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
 import sklearn.metrics as metrics
-# from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from prettytable import PrettyTable
 
 
 def _init_():
@@ -50,11 +51,24 @@ def calculate_sem_IoU(pred_np, seg_np, num_classes):  # num_classes: S3DIS 13
             U_all[sem] += U
     return I_all / U_all
 
+def count_parameters(model):
+    table = PrettyTable(["Modules", "Parameters"])
+    total_params = 0
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad: 
+            continue
+        param = parameter.numel()
+        table.add_row([name, param])
+        total_params+=param
+    print(table)
+    print(f"Total Trainable Params: {total_params}")
+    return total_params
+
 
 def train(args, io):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    torch.set_num_threads(56)
-    torch.set_num_interop_threads(8)
+    torch.set_num_threads(8)
+    torch.set_num_interop_threads(2)
     # sample_rate=1.5 to make sure some overlap
     train_loader = DataLoader(
         S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points,
@@ -69,6 +83,7 @@ def train(args, io):
         shuffle=True, drop_last=True)
 
     device = torch.device("cuda" if args.cuda else "cpu")
+    print("device: ", device)
 
     # Try to load models
     if args.model == 'dgcnn':
@@ -77,7 +92,7 @@ def train(args, io):
         raise Exception("Not implemented")
     print(str(model))
 
-    model = nn.DataParallel(model)
+    # model = nn.DataParallel(model)
     print("Let's use", torch.cuda.device_count(), "GPUs!")
 
     if args.use_sgd:
@@ -111,11 +126,11 @@ def train(args, io):
     if not os.path.exists(log_dir):
         os.mkdir(log_dir)
 
-    # writer_train_loss = SummaryWriter(os.path.join(log_dir, 'train_loss'))
-    # writer_train_accuracy = SummaryWriter(os.path.join(log_dir))
-    # writer_train_iou = SummaryWriter(os.path.join(log_dir))
-    # writer_test_accuracy = SummaryWriter(os.path.join(log_dir))
-    # writer_test_iou = SummaryWriter(os.path.join(log_dir))
+    writer_train_loss = SummaryWriter(os.path.join(log_dir, 'train_loss'))
+    writer_train_accuracy = SummaryWriter(os.path.join(log_dir), 'train_accuracy')
+    writer_train_iou = SummaryWriter(os.path.join(log_dir), 'train_iou')
+    writer_test_accuracy = SummaryWriter(os.path.join(log_dir), 'test_accuracy')
+    writer_test_iou = SummaryWriter(os.path.join(log_dir), 'test_io')
 
     for epoch in range(start_epoch, args.epochs):
         ####################
@@ -147,7 +162,7 @@ def train(args, io):
             count += batch_size
             train_loss += loss.item() * batch_size
             niter += batch_size
-            # writer_train_loss.add_scalar('Train/loss', loss.item(), niter)
+            writer_train_loss.add_scalar('Train/loss', loss.item(), niter)
             seg_np = seg.cpu().numpy()  # (batch_size, num_points)
             pred_np = pred.detach().cpu().numpy()  # (batch_size, num_points)
             train_true_cls.append(seg_np.reshape(-1))  # (batch_size * num_points)
@@ -175,8 +190,8 @@ def train(args, io):
                                                                                                   avg_per_class_acc,
                                                                                                   np.mean(train_ious))
         io.cprint(outstr)
-        # writer_train_accuracy.add_scalar('Train/accuracy', train_acc, epoch)
-        # writer_train_iou.add_scalar('Train/mIOU', np.mean(train_ious), epoch)
+        writer_train_accuracy.add_scalar('Train/accuracy', train_acc, epoch)
+        writer_train_iou.add_scalar('Train/mIOU', np.mean(train_ious), epoch)
 
         ####################
         # Test
@@ -219,8 +234,8 @@ def train(args, io):
                                                                                               avg_per_class_acc,
                                                                                               np.mean(test_ious))
         io.cprint(outstr)
-        # writer_test_accuracy.add_scalar('Test/accuracy', test_acc, epoch)
-        # writer_test_iou.add_scalar('Test/mIOU', np.mean(test_ious), epoch)
+        writer_test_accuracy.add_scalar('Test/accuracy', test_acc, epoch)
+        writer_test_iou.add_scalar('Test/mIOU', np.mean(test_ious), epoch)
 
         if np.mean(test_ious) >= best_test_iou:
             best_test_iou = np.mean(test_ious)
@@ -235,11 +250,11 @@ def train(args, io):
             }
             torch.save(state, savepath)
 
-    # writer_train_loss.close()
-    # writer_train_accuracy.close()
-    # writer_train_iou.close()
-    # writer_test_accuracy.close()
-    # writer_test_iou.close()
+    writer_train_loss.close()
+    writer_train_accuracy.close()
+    writer_train_iou.close()
+    writer_test_accuracy.close()
+    writer_test_iou.close()
 
 
 def test(args, io):
@@ -248,24 +263,30 @@ def test(args, io):
     all_pred_cls = []
     all_true_seg = []
     all_pred_seg = []
-    for test_area in range(1, 5):
+    for test_area in [1]:
         test_area = str(test_area)
         if (args.test_area == 'all') or (test_area == args.test_area):
             dataset = S3DISDataset_eval(split='test', data_root=args.data_dir, num_point=args.num_points, test_area=args.test_area,
-                                   block_size=args.block_size, stride=args.block_size, num_class=args.num_classes, num_thre=100, use_all_points=True)
+                                   block_size=args.block_size, stride=args.block_size, num_class=args.num_classes, num_thre=100, use_all_points=args.use_all_points)
             test_loader = DataLoader(dataset, batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
             room_idx = np.array(dataset.room_idxs)
             num_blocks = len(room_idx)
 
             fout_data_label = []
+            true_data_labels = []
             for room_id in np.unique(room_idx):
                 print('room id: ', room_id)
                 out_data_label_filename = 'Area_%s_room_%d_pred_gt.txt' % (test_area, room_id)
                 out_data_label_filename = os.path.join(DUMP_DIR, out_data_label_filename)
+                out_true_label_filename = 'Area_%s_room_%d_true_labels.txt' % (test_area, room_id)
+                out_true_label_filename = os.path.join(DUMP_DIR, out_true_label_filename)
                 if os.path.isfile(out_data_label_filename):
                     os.remove(out_data_label_filename)
+                if os.path.isfile(out_true_label_filename):
+                    os.remove(out_true_label_filename)
                 fout_data_label.append(open(out_data_label_filename, 'a'))
+                true_data_labels.append(open(out_true_label_filename, 'a'))
 
             device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -277,13 +298,17 @@ def test(args, io):
             else:
                 raise Exception("Not implemented")
 
-            model = nn.DataParallel(model)
+            # model = nn.DataParallel(model)
             if args.cuda:
                 checkpoint = torch.load(os.path.join(args.model_root, 'model_%s.t7' % args.test_area))
             else:
                 checkpoint = torch.load(os.path.join(args.model_root, 'model_%s.t7' % args.test_area), map_location=torch.device('cpu'))
+            
+            print("model: ", os.path.join(args.model_root, 'model_%s.t7' % args.test_area))
             model.load_state_dict(checkpoint['model_state_dict'])
             model = model.eval()
+
+            count_parameters(model)
 
             io.cprint('model_%s.t7 restored.' % args.test_area)
 
@@ -301,7 +326,11 @@ def test(args, io):
                 data = data.permute(0, 2, 1).float()
                 batch_size = data.size()[0]
 
+                # print("Data: ", data.shape)
+                # print("Seg: ", seg.shape)
+
                 seg_pred = model(data)
+                # print("Pred: ", seg_pred.shape)
                 seg_pred = seg_pred.permute(0, 2, 1).contiguous()
                 pred = seg_pred.max(dim=2)[1]
                 seg_np = seg.cpu().numpy()
@@ -311,20 +340,28 @@ def test(args, io):
                 test_true_seg.append(seg_np)
                 test_pred_seg.append(pred_np)
 
+                # print("Batch size: ", batch_size)
+
                 # write prediction results
                 for batch_id in range(batch_size):
                     pts = data[batch_id, :, :]
+                    # print("Points: ", pts.shape)
+                    
                     pts = pts.permute(1, 0).float()
                     l = seg[batch_id, :]
+                    # print("L: ", l.shape)
                     pts[:, 3:6] *= 255.0
                     pred_ = pred[batch_id, :]
+                    # print("Pred batch: ", pred.shape)
                     logits = seg_pred[batch_id, :, :]
                     # compute room_id
                     room_id = room_idx[num_batch + batch_id]
+                    # print(fout_data_label[room_id])
                     for i in range(pts.shape[0]):
-                        fout_data_label[room_id].write('%f %f %f %d %d %d %d %d %f %f %f %f\n' % (
+                        fout_data_label[room_id].write('%f %f %f %d %d %d %d %d %f %f %f\n' % (
                             pts[i, 6]*dataset.room_coord_max[room_id][0], pts[i, 7]*dataset.room_coord_max[room_id][1], pts[i, 8]*dataset.room_coord_max[room_id][2],
-                            pts[i, 3], pts[i, 4], pts[i, 5], pred_[i], l[i], logits[i, 0], logits[i, 1], logits[i, 2], logits[i, 3]))  # xyzRGB pred gt
+                            pts[i, 3], pts[i, 4], pts[i, 5], pred_[i], l[i], logits[i, 0], logits[i, 1], logits[i, 2]))  # xyzRGB pred gt
+                        true_data_labels[room_id].write("%d\n" % l[i])
                 num_batch += batch_size
                 torch.cuda.empty_cache()
 
@@ -370,13 +407,15 @@ def test(args, io):
 if __name__ == "__main__":
     # Training settings
     parser = argparse.ArgumentParser(description='Point Cloud Semantic Segmentation')
-    parser.add_argument('--data_dir', type=str, default='/home/ubuntu/Datasets/powercor_as_S3DIS_NRI_NPY',
+    parser.add_argument('--data_dir', type=str, default='/home/ben/InnovationConference/TNRIS/data_as_S3DIS_NRI_NPY',
                         help='Directory of data')
+    # parser.add_argument('--data_dir', type=str, default='/home/ben/InnovationConference/Datasets/powercor_as_S3DIS_NRI_NPY',
+                        # help='Directory of data')
     # parser.add_argument('--data_dir', type=str, default='/media/ben/T7 Touch/InnovationConference/Datasets/powercor_as_S3DIS_NRI_NPY',
                         # help='Directory of data')
     parser.add_argument('--tb_dir', type=str, default='log_tensorboard',
                         help='Directory of tensorboard logs')
-    parser.add_argument('--exp_name', type=str, default='powercor_integration_50epochs_p100', metavar='N',
+    parser.add_argument('--exp_name', type=str, default='tnris_integration_50epochs_p100', metavar='N',
                         help='Name of the experiment')
     parser.add_argument('--model', type=str, default='dgcnn', metavar='N',
                         choices=['dgcnn'],

@@ -1,5 +1,3 @@
+building
 ground
 vegetation
-building
-other
-noise
