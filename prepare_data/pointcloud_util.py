@@ -2,6 +2,7 @@ import numpy as np
 import glob
 import os
 import sys
+from tqdm import tqdm
 
 BASE_DIR = 'D:/Documents/Datasets/'  # base directory of datasets
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +18,8 @@ g_class2label = {cls: i for i, cls in enumerate(g_classes)}
 g_class2color = {'vegetation': [0, 255, 0],
                  'ground': [0, 0, 255],
                  'building': [0, 255, 255],
-                 'other': [255, 255, 255],
+                 'pole': [120, 200, 255],
+                 'network': [130, 210, 40],
                  'noise': [0, 0, 0]}
 g_easy_view_labels = [7, 8, 9, 10, 11, 1]  # todo:
 g_label2color = {g_classes.index(cls): g_class2color[cls] for cls in g_classes}
@@ -150,29 +152,33 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
     """
     assert (stride <= block_size)
 
-    limit = np.amax(data, 0)[0:3]
+    x_ub = np.amax(data[:, 0])
+    x_lb = np.amin(data[:, 0])
+    
+    y_ub = np.amax(data[:, 1])
+    y_lb = np.amin(data[:, 1])
 
     # Get the corner location for our sampling blocks    
     xbeg_list = []
     ybeg_list = []
     if not random_sample:
-        num_block_x = int(np.ceil((limit[0] - block_size) / stride)) + 1
-        num_block_y = int(np.ceil((limit[1] - block_size) / stride)) + 1
+        num_block_x = int(np.ceil(((x_ub - x_lb) - block_size) / stride)) + 1
+        num_block_y = int(np.ceil(((y_ub - y_lb) - block_size) / stride)) + 1
         for i in range(num_block_x):
             for j in range(num_block_y):
-                xbeg_list.append(i * stride)
-                ybeg_list.append(j * stride)
+                xbeg_list.append(x_lb + i * stride)
+                ybeg_list.append(y_lb + j * stride)
     else:
-        num_block_x = int(np.ceil(limit[0] / block_size))
-        num_block_y = int(np.ceil(limit[1] / block_size))
+        num_block_x = int(np.ceil((x_ub - x_lb) / block_size))
+        num_block_y = int(np.ceil((y_ub - y_lb) / block_size))
         if sample_num is None:
             sample_num = num_block_x * num_block_y * sample_aug
         for _ in range(sample_num):
-            xbeg = np.random.uniform(-block_size, limit[0])
-            ybeg = np.random.uniform(-block_size, limit[1])
+            xbeg = np.random.uniform(x_lb, x_ub)
+            ybeg = np.random.uniform(y_lb, y_ub)
             xbeg_list.append(xbeg)
             ybeg_list.append(ybeg)
-
+            
     # Collect blocks
     block_data_list = []
     block_label_list = []
@@ -184,6 +190,7 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
         ycond = (data[:, 1] <= ybeg + block_size) & (data[:, 1] >= ybeg)
         cond = xcond & ycond
         if np.sum(cond) < 100:  # discard block if there are less than 100 pts.
+            print("HERE")
             continue
 
         block_data = data[cond, :]
@@ -200,11 +207,9 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
             block_label_list.append(np.expand_dims(block_label_sampled, 0))
 
     if use_all_points:
-        block_data_return, block_label_return = np.array(block_data_list), np.array(block_label_list)
+        block_data_return, block_label_return = np.array(block_data_list, dtype = object), np.array(block_label_list, dtype = object)
     else:
         block_data_return, block_label_return = np.concatenate(block_data_list, 0), np.concatenate(block_label_list, 0)
-    print('block_data_return_size:')
-    print(np.array(block_data_return).shape)
 
     return block_data_return, block_label_return
 

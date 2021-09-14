@@ -59,9 +59,10 @@ def get_graph_feature(x, k=20, idx=None, dim9=False, use_cuda=True):
 
     x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
     feature = x.view(batch_size*num_points, -1)[idx, :]
+
+    
     feature = feature.view(batch_size, num_points, k, num_dims) 
     x = x.view(batch_size, num_points, 1, num_dims).repeat(1, 1, k, 1)
-    
     feature = torch.cat((feature-x, x), dim=3).permute(0, 3, 1, 2)
   
     return feature      # (batch_size, 2*num_dims, num_points, k)
@@ -137,6 +138,7 @@ class DGCNN_cls(nn.Module):
     def forward(self, x):
         batch_size = x.size(0)
         x = get_graph_feature(x, k=self.k)      # (batch_size, 3, num_points) -> (batch_size, 3*2, num_points, k)
+        print("X: ", x.shape)
         x = self.conv1(x)                       # (batch_size, 3*2, num_points, k) -> (batch_size, 64, num_points, k)
         x1 = x.max(dim=-1, keepdim=False)[0]    # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points)
 
@@ -334,7 +336,7 @@ class DGCNN_semseg(nn.Module):
         self.bn7 = nn.BatchNorm1d(512)
         self.bn8 = nn.BatchNorm1d(256)
 
-        self.conv1 = nn.Sequential(nn.Conv2d(18, 64, kernel_size=1, bias=False),
+        self.conv1 = nn.Sequential(nn.Conv2d(6, 64, kernel_size=1, bias=False),
                                    self.bn1,
                                    nn.LeakyReLU(negative_slope=0.2))
         self.conv2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=1, bias=False),
@@ -363,7 +365,6 @@ class DGCNN_semseg(nn.Module):
         
 
     def forward(self, x):
-        batch_size = x.size(0)
         num_points = x.size(2)
 
         x = get_graph_feature(x, k=self.k, dim9=True, use_cuda=self.use_cuda)   # (batch_size, 9, num_points) -> (batch_size, 9*2, num_points, k)

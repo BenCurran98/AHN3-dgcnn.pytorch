@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
-from data import S3DISDataset
+from data import FugroDataset
 from data import S3DISDataset_eval
 from model import DGCNN_semseg
 import numpy as np
@@ -70,17 +70,32 @@ def train(args, io):
     torch.set_num_threads(8)
     torch.set_num_interop_threads(2)
     # sample_rate=1.5 to make sure some overlap
+    # train_loader = DataLoader(
+    #     S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points,
+    #                  block_size=args.block_size,
+    #                  sample_rate=1.5, num_class=args.num_classes, use_all_points = args.use_all_points), num_workers=8, batch_size=args.batch_size,
+    #     shuffle=True, drop_last=True)
+
+    # test_loader = DataLoader(
+    #     S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points,
+    #                  block_size=args.block_size,
+    #                  sample_rate=1.5, num_class=args.num_classes), num_workers=8, batch_size=args.test_batch_size,
+    #     shuffle=True, drop_last=True)
+
     train_loader = DataLoader(
-        S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points,
+        FugroDataset(split='train', data_root=args.data_dir, num_point=args.num_points,
                      block_size=args.block_size,
-                     sample_rate=1.5, num_class=args.num_classes, use_all_points = args.use_all_points), num_workers=8, batch_size=args.batch_size,
+                     sample_rate=1.5, use_all_points = args.use_all_points, test_prop = args.test_prop), num_workers=8, batch_size=args.batch_size,
         shuffle=True, drop_last=True)
 
     test_loader = DataLoader(
-        S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points,
+        FugroDataset(split='test', data_root=args.data_dir, num_point=args.num_points,
                      block_size=args.block_size,
-                     sample_rate=1.5, num_class=args.num_classes), num_workers=8, batch_size=args.test_batch_size,
+                     sample_rate=1.5, test_prop = args.test_prop), num_workers=8, batch_size=args.test_batch_size,
         shuffle=True, drop_last=True)
+
+    
+    print("Batch: ", args.batch_size)
 
     device = torch.device("cuda" if args.cuda else "cpu")
     print("device: ", device)
@@ -93,7 +108,8 @@ def train(args, io):
     print(str(model))
 
     # model = nn.DataParallel(model)
-    print("Let's use", torch.cuda.device_count(), "GPUs!")
+    if args.cuda:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
 
     if args.use_sgd:
         print("Use SGD")
@@ -148,12 +164,13 @@ def train(args, io):
 
         io.cprint('Start training for Epoch %d ...' % epoch)
         print('L: ', len(train_loader))
-        for data, seg in tqdm(train_loader):
-            data, seg = data.to(device), seg.to(device)
+        for data, seg, mask in tqdm(train_loader):
+            data, seg, mask = data.to(device), seg.to(device), mask.to(device)
             data = data.permute(0, 2, 1).float()
             batch_size = data.size()[0]
             opt.zero_grad()
-            seg_pred = model(data)
+            seg_pred = model(data) # batch_size * num_points * num_classes
+            seg_focus_target = seg[np.where(mask)]
             seg_pred = seg_pred.permute(0, 2, 1).contiguous()
             loss = criterion(seg_pred.view(-1, args.num_classes), seg.view(-1, 1).squeeze().long())
             loss.backward()
@@ -407,15 +424,15 @@ def test(args, io):
 if __name__ == "__main__":
     # Training settings
     parser = argparse.ArgumentParser(description='Point Cloud Semantic Segmentation')
-    parser.add_argument('--data_dir', type=str, default='/home/ben/InnovationConference/TNRIS/data_as_S3DIS_NRI_NPY',
-                        help='Directory of data')
+    # parser.add_argument('--data_dir', type=str, default='/home/ben/InnovationConference/TNRIS/data_as_S3DIS_NRI_NPY',
+    #                     help='Directory of data')
     # parser.add_argument('--data_dir', type=str, default='/home/ben/InnovationConference/Datasets/powercor_as_S3DIS_NRI_NPY',
                         # help='Directory of data')
-    # parser.add_argument('--data_dir', type=str, default='/media/ben/T7 Touch/InnovationConference/Datasets/powercor_as_S3DIS_NRI_NPY',
-                        # help='Directory of data')
+    parser.add_argument('--data_dir', type=str, default='/media/ben/T7 Touch/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY',
+                        help='Directory of data')
     parser.add_argument('--tb_dir', type=str, default='log_tensorboard',
                         help='Directory of tensorboard logs')
-    parser.add_argument('--exp_name', type=str, default='tnris_integration_50epochs_p100', metavar='N',
+    parser.add_argument('--exp_name', type=str, default='dgcnn_test_30epochs_p100', metavar='N',
                         help='Name of the experiment')
     parser.add_argument('--model', type=str, default='dgcnn', metavar='N',
                         choices=['dgcnn'],
@@ -463,6 +480,8 @@ if __name__ == "__main__":
                         help='Pretrained model root')
     parser.add_argument('--test_visu_dir', default='predict',
                         help='Directory of test visualization files.')
+    parser.add_argument('--test_prop', type=float, default = 0.2, metavar = 'N',
+                        help = 'Proportion of data to use for testing')
     args = parser.parse_args()
 
     _init_()

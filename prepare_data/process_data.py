@@ -1,0 +1,283 @@
+import os
+import glob
+from h5py._hl.files import make_fapl
+import numpy as np
+import json
+import h5py
+import laspy
+from tqdm import tqdm
+import argparse
+import pointcloud_util as utils
+
+# map classes in the dataset to classes for the DGCNN classifier
+CLASS_MAP = {
+    2: 1,
+    3: 2,
+    4: 2,
+    6: 0,
+    14: 3,
+    22: 4
+}
+
+def load_h5_pointcloud(filename):
+    """Load a pointcloud in HDF5 format from `filename`"""
+    file = h5py.File(filename, 'r+')
+    # only really need position and classification - if we have agl, substitute for z
+    position = file['LAS/Position']
+    if 'AGL' in file.keys():
+        position[:, 2] = file['AGL']
+    
+    labels = file['LAS/Classification']
+
+    return position, labels
+
+def load_las_pointcloud(filename):
+    """Load a pointcloud in LAS format from `filename`"""
+    file = laspy.read(filename)
+    position = np.vstack((file.x, file.y, file.z)).transpose()
+    labels = file.classification
+    return position, labels
+
+def load_pointcloud(filename):
+    """Load a pointcloud from a `filename"""
+    if filename.split('.')[-1] == 'h5':
+        return load_h5_pointcloud(filename)
+    elif filename.split('.')[-1] == 'las':
+        return load_las_pointcloud(filename)
+    else:
+        raise Exception('Unsupported file type!')
+
+def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5):
+    """Load a set of pointclouds from a directory and save them in a txt file
+
+    Args:
+        dir (String): Directory the pointclouds are loaded from
+        outdir (String): Directory the pointcloud text files are saved to
+
+    Returns:
+        data_batches: List of point data from pointclouds
+        label_batches: List of label data from pointclouds
+    """
+    data_batch_list, label_batch_list = [], []
+    files = os.listdir(dir)
+    acceptable_files = [f for f in files if f.split('.')[-1] in ['h5', 'las']]
+
+    n = 1
+    tile_num = 0
+    for i in tqdm(range(len(acceptable_files)), desc = "Loading PCs"):
+        f = acceptable_files[i]
+        whole_data, whole_labels = load_pointcloud(os.path.join(dir, f))
+
+        data, labels = utils.room2blocks(whole_data, whole_labels, 10000, block_size = block_size, random_sample = False, stride = block_size/2, sample_num = sample_num, use_all_points = True)
+
+        for i in tqdm(range(data.shape[0]), desc = "Saving Data"):
+            this_data, this_labels = convert_pc_labels(data[i], labels[i])
+            np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(tile_num)), np.hstack((this_data, np.reshape(this_labels, (len(this_labels), 1)))))
+            data_batch_list.append(this_data)
+            label_batch_list.append(this_labels)
+            tile_num += 1
+
+        n += 1
+    
+    data_batches = np.concatenate(data_batch_list, 0)
+    label_batches = np.concatenate(label_batch_list, 0)
+    return data_batches, label_batches
+
+def convert_pc_labels(data, labels):
+    """Convert labels in a pointcloud to a format compatible with DGCNN
+
+    Args:
+        data (List): List of batched pointcloud data
+        labels (List): List of batched pointcloud labels
+
+    Returns:
+        data: All valid entries of batch data
+        labels: Remapped labels of batched data 
+    """
+    valid_idxs = [i for i in range(len(labels)) if labels[i] in CLASS_MAP.keys()]
+    data = data[valid_idxs, :]
+    labels = labels[valid_idxs]
+
+    m = 1
+    for c in CLASS_MAP.keys():
+        labels[np.where(labels == c)] = CLASS_MAP[c]
+        m += 1
+
+    return data, labels
+
+def extract_annotations(area, data_folder, output_path, categories, features, features_output):
+    """Extract the labelled point clouds from a directory
+
+    Args:
+        area (String): Name of the area folder being processed
+        data_folder (String): Folder containing data being processed
+        output_path (String): Where to save the processed data
+        categories (List): Valid class labels to be processed
+        features (Dict): Dict mapping point feature name to index of that feature in the text data
+        features_output (List): Point features being saved after processing
+    """
+    if not os.path.exists(output_path):
+        os.mkdir(output_path)
+
+    orig_output_path = output_path
+    if not os.path.exists(output_path):
+        os.mkdir(output_path)
+
+    room_files = list(glob.iglob(os.path.join(data_folder, '*.txt')))
+    for i in tqdm(range(len(room_files)), desc = "Extracting PC Data"):  # read each tiled point cloud
+        room_id = i + 1
+        room_file = room_files[i]
+        output_path = orig_output_path
+        output_path = os.path.join(output_path, 'Area_' + str(room_id))
+        if not os.path.exists(output_path):
+            os.mkdir(output_path)
+
+        output_path = os.path.join(output_path, area)
+        if not os.path.exists(output_path):
+            os.mkdir(output_path)
+
+        # load data
+        room_data = np.loadtxt(room_file)
+        output_label = room_data[:, -1]
+        # merge bridges into ground
+        bridge_idx = np.where(output_label == 26.0)[0]
+        output_label[bridge_idx] = 2.0
+        output_data = np.zeros((room_data.shape[0], len(features_output)))
+        test = np.unique(output_label)
+        # select the output features
+        for feature_id, feature in enumerate(features_output):
+            output_data[:, feature_id] = room_data[:, features[feature]]
+        with open(output_path + '/' + area + '_' + str(room_id) + '.txt', 'w+') as fout1:
+            np.savetxt(fout1, output_data, fmt="%.3f %.3f %.3f")
+        fout1.close()
+
+        # write file according to classes
+        ANNO_PATH = os.path.join(output_path, 'Annotations')
+        if not os.path.exists(ANNO_PATH):
+            os.mkdir(ANNO_PATH)
+
+        eff_categories = np.unique(output_label)
+        for category in eff_categories:
+            # find corresponding classes
+            category_indices = np.where(output_label == category)[0]
+            with open(ANNO_PATH + '/' + categories[category] + '.txt', 'w+') as fout2:
+                np.savetxt(fout2, output_data[category_indices, :], fmt="%.3f %.3f %.3f")
+            fout2.close()
+
+def write_anno_paths(base_dir, root_dir):
+    """Write the paths of the point cloud annotation files to a common location
+
+    Args:
+        base_dir (String): Base directory of the data
+        root_dir (String): Root directory of the files
+    """
+    with open(os.path.join(root_dir, 'meta/anno_paths.txt'), 'w+') as anno_paths:
+        paths = []
+        for path in glob.glob(base_dir + '/processed/*/*/Annotations'):
+            path = path.replace('\\', '/')
+            paths.append(path)
+        paths = np.array(paths)
+        np.savetxt(anno_paths, paths, fmt='%s')
+    anno_paths.close()
+
+def collect_3d_data(root_dir, output_folder):
+    """Collect data in the meta data folder into numpy files
+
+    Args:
+        root_dir (String): Root directory of the files
+        output_folder (String): Where to save the numpy data files
+    """
+    anno_paths = [line.rstrip() for line in open(os.path.join(root_dir, 'meta/anno_paths.txt'))]
+
+    if not os.path.exists(output_folder):
+        os.mkdir(output_folder)
+
+    for anno_path in tqdm(anno_paths):
+        elements = anno_path.split('/')
+        out_filename = elements[-3] + '_' + elements[-2] + '.npy'
+        utils.collect_point_label(anno_path, os.path.join(output_folder, out_filename), 'numpy')
+
+def write_npy_file_names(root_dir, data_path):
+    """Save the names of the numpy data files for future reference
+
+    Args:
+        root_dir (String): Directory of the files
+        data_path (String): Directory of the data files being referenced
+    """
+    with open(os.path.join(root_dir, 'meta/all_data_label.txt'), 'w+') as f:
+        files = []
+        for file in glob.iglob(data_path + '/*.npy'):
+            file = os.path.basename(file)
+            files.append(file)
+        paths = np.array(files)
+        np.savetxt(f, files, fmt='%s')
+    f.close()
+
+def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_folder, npy_data_folder, area, categories_file, features_file, features_output, block_size, sample_num):
+    """Pre-process raw data for the classifier
+
+    Args:
+        base_dir (String): Base directory of the data
+        root_folder (String): Root folder of the files (contains meta-data directory)
+        pc_folder (String): Folder containing pointcloud files
+        data_folder (String): Folder containing extracted pointcloud data files
+        processed_data_folder (String): Folder containing the complete datasets
+        npy_data_folder (String): Output folder of the data summary
+        area (String): Name of the folder containing the area data we want
+        categories_file (String): JSON file containing label mappings
+        features_file (String): JSON file containing index mappings of LiDAR features
+        features_output (List): LiDAR features to extract
+    """
+    with open(categories_file, 'r') as f:
+        categories = json.load(f)
+    with open(features_file, 'r') as f:
+        features = json.load(f)
+
+    if not os.path.isdir(base_dir):
+        os.mkdir(base_dir)
+    if not os.path.isdir(data_folder):
+        os.mkdir(data_folder)
+
+    categories = {float(c): categories[c] for c in categories.keys()}
+
+    print("Base: ", base_dir)
+    print("Root: ", root_folder)
+    print("Pc: ", pc_folder)
+    print("Data: ", data_folder)
+    print("Processed: ", processed_data_folder)
+    print("NPY: ", npy_data_folder)
+
+    # print("Loading pointcloud data")
+    # load_pointcloud_dir(pc_folder, data_folder, block_size = block_size, sample_num = sample_num)
+    print("Extracting annotations...")
+    extract_annotations(area, data_folder, processed_data_folder, categories, features, features_output)
+    print("Writing annotation paths...")
+    write_anno_paths(base_dir, root_folder)
+    print("collecting NPY data...")
+    collect_3d_data(root_folder, npy_data_folder)
+    print("Writitng NPY data...")
+    write_npy_file_names(root_folder, npy_data_folder)
+
+
+if __name__ == "__main__":
+    AREA = 'Training'
+    PC_DIR = os.path.join(os.getcwd(), '..' '/Datasets', 'QualityTraining-orig')
+    BASE_DIR = os.path.join(os.getcwd(), '..' '/Datasets')
+    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+    parser = argparse.ArgumentParser(description='Extract point cloud data')
+    parser.add_argument('--base_dir', type = str, default = os.path.join(BASE_DIR, AREA), help = 'Base directory of data')
+    parser.add_argument('--root_dir', type = str, default = ROOT_DIR, help = 'Root directory of the files')
+    parser.add_argument('--area', type = str, default = AREA, help = 'Name of area to process')
+    parser.add_argument('--pc_folder', type = str, default = PC_DIR)
+    parser.add_argument('--data_folder', type = str, default = os.path.join(BASE_DIR, AREA, "Data"), help = 'Folder containing the complete datasets')
+    parser.add_argument('--processed_data_folder', type = str, default = os.path.join(BASE_DIR, AREA, "processed"), help = 'Folder containing the complete datasets')
+    parser.add_argument('--categories_file', type = str, default = 'params/categories-new.json', help = 'JSON file containing label mappings')
+    parser.add_argument('--features_file', type = str, default = 'params/features.json', help = 'JSON file containing index mappings of LiDAR features')
+    parser.add_argument('--features_output', nargs = '*', type = str, default = ['X', 'Y', 'Z'], help = 'LiDAR features to extract')
+    parser.add_argument('--npy_data_folder', type = str, default = os.path.join(BASE_DIR, 'data_as_S3DIS_NRI_NPY'), help = 'Output folder of the data summary')
+    parser.add_argument('--block_size', type = int, default = 100, help = 'Size of blocks to divide pointclouds into')
+    parser.add_argument('--sample_num', type = int, default = 5, help = 'Number of tile samples to take from each point cloud')
+    
+    args = parser.parse_args()
+    
+    process_data(args.base_dir, args.root_dir, args.pc_folder, args.data_folder, args.processed_data_folder, args.npy_data_folder, args.area, args.categories_file, args.features_file, args.features_output, args.block_size, args.sample_num)
