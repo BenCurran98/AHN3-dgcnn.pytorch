@@ -67,31 +67,17 @@ def count_parameters(model):
 
 def train(args, io):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    torch.set_num_threads(8)
-    torch.set_num_interop_threads(2)
-    # sample_rate=1.5 to make sure some overlap
-    # train_loader = DataLoader(
-    #     S3DISDataset(split='train', data_root=args.data_dir, num_point=args.num_points,
-    #                  block_size=args.block_size,
-    #                  sample_rate=1.5, num_class=args.num_classes, use_all_points = args.use_all_points), num_workers=8, batch_size=args.batch_size,
-    #     shuffle=True, drop_last=True)
-
-    # test_loader = DataLoader(
-    #     S3DISDataset(split='test', data_root=args.data_dir, num_point=args.num_points,
-    #                  block_size=args.block_size,
-    #                  sample_rate=1.5, num_class=args.num_classes), num_workers=8, batch_size=args.test_batch_size,
-    #     shuffle=True, drop_last=True)
+    torch.set_num_threads(args.num_threads)
+    torch.set_num_interop_threads(args.num_interop_threads)
 
     train_loader = DataLoader(
         FugroDataset(split='train', data_root=args.data_dir, num_point=args.num_points,
-                     block_size=args.block_size,
-                     sample_rate=1.5, use_all_points = args.use_all_points, test_prop = args.test_prop), num_workers=8, batch_size=args.batch_size,
+                     block_size=args.block_size, use_all_points = args.use_all_points, test_prop = args.test_prop, sample_num = args.sample_num), num_workers=8, batch_size=args.batch_size,
         shuffle=True, drop_last=True)
 
     test_loader = DataLoader(
         FugroDataset(split='test', data_root=args.data_dir, num_point=args.num_points,
-                     block_size=args.block_size,
-                     sample_rate=1.5, test_prop = args.test_prop), num_workers=8, batch_size=args.test_batch_size,
+                     block_size=args.block_size, test_prop = args.test_prop), num_workers=8, batch_size=args.test_batch_size,
         shuffle=True, drop_last=True)
 
     
@@ -162,30 +148,44 @@ def train(args, io):
         train_pred_seg = []
         train_label_seg = []
 
-        io.cprint('Start training for Epoch %d ...' % epoch)
-        print('L: ', len(train_loader))
-        for data, seg, mask in tqdm(train_loader):
-            data, seg, mask = data.to(device), seg.to(device), mask.to(device)
-            data = data.permute(0, 2, 1).float()
-            batch_size = data.size()[0]
-            opt.zero_grad()
-            seg_pred = model(data) # batch_size * num_points * num_classes
-            seg_focus_target = seg[np.where(mask)]
-            seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-            loss = criterion(seg_pred.view(-1, args.num_classes), seg.view(-1, 1).squeeze().long())
-            loss.backward()
-            opt.step()
-            pred = seg_pred.max(dim=2)[1]  # (batch_size, num_points)
-            count += batch_size
-            train_loss += loss.item() * batch_size
-            niter += batch_size
-            writer_train_loss.add_scalar('Train/loss', loss.item(), niter)
-            seg_np = seg.cpu().numpy()  # (batch_size, num_points)
-            pred_np = pred.detach().cpu().numpy()  # (batch_size, num_points)
-            train_true_cls.append(seg_np.reshape(-1))  # (batch_size * num_points)
-            train_pred_cls.append(pred_np.reshape(-1))  # (batch_size * num_points)
-            train_true_seg.append(seg_np)
-            train_pred_seg.append(pred_np)
+        with tqdm(train_loader, desc = "Training epoch {}".format(epoch)) as t:
+            for data, seg, mask in train_loader:
+                data, seg, mask = data.to(device), seg.to(device), mask.to(device)
+                data = data.permute(0, 2, 1).float()
+                batch_size = data.size()[0]
+                opt.zero_grad()
+                seg_pred = model(data) # batch_size * num_points * num_classes
+
+                focus_seg = torch.zeros_like(seg)
+                focus_pred = torch.zeros_like(seg_pred)
+                for i in range(mask.shape[0]):
+                    masked_idxs = np.where(mask[i, :])[0]
+                    focus_seg[i, masked_idxs] = seg[i, masked_idxs]
+                    focus_pred[i, :, masked_idxs] = seg_pred[i, :, masked_idxs]
+                
+                seg = focus_seg
+                seg_pred = focus_pred
+                seg_pred = seg_pred.permute(0, 2, 1).contiguous()
+                loss = criterion(seg_pred.view(-1, args.num_classes), seg.view(-1, 1).squeeze().long())
+                loss.backward()
+                opt.step()
+                pred = seg_pred.max(dim=2)[1]  # (batch_size, num_points)
+                count += batch_size
+                train_loss += loss.item() * batch_size
+                niter += batch_size
+                writer_train_loss.add_scalar('Train/loss', loss.item(), niter)
+                seg_np = seg.cpu().numpy()  # (batch_size, num_points)
+                pred_np = pred.detach().cpu().numpy()  # (batch_size, num_points)
+                train_true_cls.append(seg_np.reshape(-1))  # (batch_size * num_points)
+                train_pred_cls.append(pred_np.reshape(-1))  # (batch_size * num_points)
+                train_true_seg.append(seg_np)
+                train_pred_seg.append(pred_np)
+                
+                balanced_train_acc = metrics.balanced_accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
+                train_acc = metrics.accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
+                t.set_postfix(accuracy = train_acc, balanced_accuracy = balanced_train_acc)
+                t.update()
+
         if args.scheduler == 'cos':
             scheduler.step()
         elif args.scheduler == 'step':
@@ -221,23 +221,28 @@ def train(args, io):
         test_true_seg = []
         test_pred_seg = []
 
-        io.cprint('Start evaluation for Epoch %d ...' % epoch)
-        for data, seg in tqdm(test_loader):
-            data, seg = data.to(device), seg.to(device)
-            data = data.permute(0, 2, 1).float()
-            batch_size = data.size()[0]
-            seg_pred = model(data)
-            seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-            loss = criterion(seg_pred.view(-1, args.num_classes), seg.view(-1, 1).squeeze().long())
-            pred = seg_pred.max(dim=2)[1]
-            count += batch_size
-            test_loss += loss.item() * batch_size
-            seg_np = seg.cpu().numpy()
-            pred_np = pred.detach().cpu().numpy()
-            test_true_cls.append(seg_np.reshape(-1))
-            test_pred_cls.append(pred_np.reshape(-1))
-            test_true_seg.append(seg_np)
-            test_pred_seg.append(pred_np)
+        with tqdm(test_loader, desc = "Testing epoch {}".format(epoch)) as t:
+            for data, seg, _ in test_loader:
+                data, seg = data.to(device), seg.to(device)
+                data = data.permute(0, 2, 1).float()
+                batch_size = data.size()[0]
+                seg_pred = model(data)
+                seg_pred = seg_pred.permute(0, 2, 1).contiguous()
+                loss = criterion(seg_pred.view(-1, args.num_classes), seg.view(-1, 1).squeeze().long())
+                pred = seg_pred.max(dim=2)[1]
+                count += batch_size
+                test_loss += loss.item() * batch_size
+                seg_np = seg.cpu().numpy()
+                pred_np = pred.detach().cpu().numpy()
+                test_true_cls.append(seg_np.reshape(-1))
+                test_pred_cls.append(pred_np.reshape(-1))
+                test_true_seg.append(seg_np)
+                test_pred_seg.append(pred_np)
+
+                balanced_test_acc = metrics.balanced_accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
+                test_acc = metrics.accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
+                t.set_postfix(accuracy = test_acc, balanced_accuracy = balanced_test_acc)
+                t.update()
         test_true_cls = np.concatenate(test_true_cls)
         test_pred_cls = np.concatenate(test_pred_cls)
         test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
@@ -343,11 +348,7 @@ def test(args, io):
                 data = data.permute(0, 2, 1).float()
                 batch_size = data.size()[0]
 
-                # print("Data: ", data.shape)
-                # print("Seg: ", seg.shape)
-
                 seg_pred = model(data)
-                # print("Pred: ", seg_pred.shape)
                 seg_pred = seg_pred.permute(0, 2, 1).contiguous()
                 pred = seg_pred.max(dim=2)[1]
                 seg_np = seg.cpu().numpy()
@@ -357,8 +358,6 @@ def test(args, io):
                 test_true_seg.append(seg_np)
                 test_pred_seg.append(pred_np)
 
-                # print("Batch size: ", batch_size)
-
                 # write prediction results
                 for batch_id in range(batch_size):
                     pts = data[batch_id, :, :]
@@ -366,10 +365,7 @@ def test(args, io):
                     
                     pts = pts.permute(1, 0).float()
                     l = seg[batch_id, :]
-                    # print("L: ", l.shape)
-                    pts[:, 3:6] *= 255.0
                     pred_ = pred[batch_id, :]
-                    # print("Pred batch: ", pred.shape)
                     logits = seg_pred[batch_id, :, :]
                     # compute room_id
                     room_id = room_idx[num_batch + batch_id]
@@ -441,7 +437,7 @@ if __name__ == "__main__":
                         choices=['S3DIS'])
     parser.add_argument('--block_size', type=float, default=30.0,
                         help='size of one block')
-    parser.add_argument('--num_classes', type=int, default=4,
+    parser.add_argument('--num_classes', type=int, default=5,
                         help='number of classes in the dataset')
     parser.add_argument('--test_area', type=str, default='4', metavar='N',
                         choices=['1', '2', '3', '4', 'all'])
@@ -482,6 +478,12 @@ if __name__ == "__main__":
                         help='Directory of test visualization files.')
     parser.add_argument('--test_prop', type=float, default = 0.2, metavar = 'N',
                         help = 'Proportion of data to use for testing')
+    parser.add_argument('--sample_num', type=int, default = 5, metavar = 'N',
+                        help = 'Number of training blocks to randomly sample')
+    parser.add_argument('--num_threads', type=int, default = 8, metavar = 'N',
+                        help = 'Number of threads to use for training')
+    parser.add_argument('--num_interop_threads', type=int, default = 2, metavar = 'N',
+                        help = 'Number of threads to use for inter-operations in pytorch')
     args = parser.parse_args()
 
     _init_()

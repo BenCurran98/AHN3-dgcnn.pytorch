@@ -23,15 +23,37 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
-import prepare_data.pointcloud_util as indoor3d_util
+import prepare_data.pointcloud_util as util
 
 class FugroDataset(Dataset):
-    def __init__(self, split='train', data_root='trainval_fullarea', num_point=4096, block_size=1.0, sample_rate=1.0, use_all_points=False, num_thre = 1024, test_prop = 0.2, classes = [0, 1, 2, 3, 4]):
+    """
+    A class to wrap around a Fugro point cloud dataset
+
+    ...
+    Attributes
+    ----------
+    split : str
+        Indicates if this is a training or test data set
+    data_root : str
+        Default location of the directory containing the data (default '')
+    num_point : int
+        The number of points to sample from a point cloud block (default 4096)
+    block_size : float
+        Size of the blocks to subdivide a tile into (default 30.0)
+    use_all_points : bool
+        Whether to use all points in a block or to subsample (default False)
+    test_prop : float
+        Fraction of data set to use as test/validation data (default 0.2)
+    classes : list
+        List of classes used in the data set (default [1, 2, 3, 4, 5])
+    sample_num : int
+        Number of blocks to randomly sample from each tile (default 5)
+    """
+    def __init__(self, split='train', data_root='', num_point=4096, block_size=30.0, use_all_points=False, test_prop = 0.2, classes = [0, 1, 2, 3, 4], sample_num = 5):
         super().__init__()
         self.num_point = num_point
         self.block_size = block_size
         self.use_all_points = use_all_points
-        self.num_thre = num_thre
         self.test_prop = test_prop
         self.classes = classes
         rooms = sorted(os.listdir(data_root))
@@ -48,19 +70,15 @@ class FugroDataset(Dataset):
 
         room_idxs = []
         num_point_all = []
-        # for index, room_name in enumerate(rooms_split):
         for index in tqdm(range(len(rooms_split)), "Sampling Tiles"):
-        # rooms_split = rooms_split[:2]
-        # current_idx = 0
-        # for index in range(2):
             room_name = rooms_split[index]
             room_path = os.path.join(data_root, room_name)
             room_data = np.load(room_path)
             points, labels = room_data[:, 0:3], room_data[:, 3]
             coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
             self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
-            block_points, block_labels = indoor3d_util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
-                                                       stride=self.block_size/3, random_sample=False, sample_num=None, use_all_points=self.use_all_points)
+            block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
+                                                       stride=self.block_size/3, random_sample=True, sample_num=sample_num, use_all_points=self.use_all_points)
 
             room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
             self.room_points.append(block_points), self.room_labels.append(block_labels)
@@ -73,20 +91,39 @@ class FugroDataset(Dataset):
         print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
 
     def create_train_mask(self, idx, tot_samples):
+        """Generate a binary mask to select training points to contribute to learning
+
+        Args:
+            idx (int): Index of the labels in the data set that are having the mask applied
+            tot_samples (int): Total number of selected points we would like
+
+        Returns:
+            train_mask: Binary mask where a 1 indicates that this label will be used in back propogation
+        """
         labels = self.room_labels[idx]
         label_counts = np.zeros(len(self.classes))
         for i in range(len(self.classes)):
             label_counts[i] = np.sum(labels == self.classes[i])
-        min_label_count = min(label_counts)
+        min_label_count = min([count for count in label_counts if count > 0])
         n_samples = int(min(min_label_count, np.floor(tot_samples/len(self.classes))))
         train_mask = np.zeros(labels.shape)
         for label in self.classes:
             this_label_idxs = np.where(labels == label)[0]
-            training_idxs = np.random.choice(this_label_idxs, n_samples, replace = False)
-            train_mask[training_idxs] = 1
+            if len(this_label_idxs) > 0:
+                training_idxs = np.random.choice(this_label_idxs, n_samples, replace = False)
+                train_mask[training_idxs] = 1
         return train_mask
 
     def sample_points(self, idx, tot_samples):
+        """Sample points from a tile
+
+        Args:
+            idx (int): Index of the tile in the data set we are sampling from
+            tot_samples (int): Total number of points to sample
+
+        Returns:
+            selected_point_idxs: List of point indexs that we sample
+        """
         labels = self.room_labels[idx]
         label_counts = np.zeros(len(self.classes))
         for i in range(len(self.classes)):
@@ -125,29 +162,64 @@ class FugroDataset(Dataset):
         if not self.use_all_points:
             N_points = self.num_point
 
+        # subsample the points
         selected_point_idxs = self.sample_points(idx, N_points)
-
-        # add normalized xyz
-        # center = points[np.random.choice(N_points)][:3]
-        # selected_points = points[selected_point_idxs, :]  # num_point * 6
-        # current_points = np.zeros((self.num_point, 9))  # num_point * 9
-        # current_points[:, 6] = selected_points[:, 0] / self.room_coord_max[room_idx][0]
-        # current_points[:, 7] = selected_points[:, 1] / self.room_coord_max[room_idx][1]
-        # current_points[:, 8] = selected_points[:, 2] / self.room_coord_max[room_idx][2]
-        # selected_points[:, 0] = selected_points[:, 0] - center[0]
-        # selected_points[:, 1] = selected_points[:, 1] - center[1]
-        # selected_points[:, 3:6] /= 255.0
-        # current_points[:, 0:6] = selected_points
-        # current_labels = labels[selected_point_idxs]
-
-        # return current_points, current_labels
 
         selected_points = points[selected_point_idxs, :]
         selected_labels = labels[selected_point_idxs]
 
+        # generate a binary training mask for the points (which will be ignored in testing)
         mask = self.create_train_mask(idx, N_points)
         
         return selected_points, selected_labels, mask
+
+    def __len__(self):
+        return len(self.room_idxs)
+
+class FugroDataset_eval(Dataset):
+    def __init__(self, split='train', data_root='', num_point=4096, block_size=30.0, use_all_points=False):
+        super().__init__()
+        self.num_point = num_point
+        self.block_size = block_size
+        
+        self.use_all_points = use_all_points
+        rooms = sorted(os.listdir(data_root))
+        rooms_split = [room for room in rooms if 'Area_' in room]
+        
+        self.room_points, self.room_labels = [], []
+        self.room_coord_min, self.room_coord_max = [], []
+
+        room_idxs = []
+        for index, room_name in enumerate(rooms_split):
+            room_path = os.path.join(data_root, room_name)
+            room_data = np.load(room_path)
+            points, labels = room_data[:, 0:6], room_data[:, 6]
+            coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
+            self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
+            block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
+                                                       stride=self.block_size, random_sample=False, sample_num=None, use_all_points=self.use_all_points)
+            room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
+            self.room_points.append(block_points), self.room_labels.append(block_labels)
+        self.room_points = np.concatenate(self.room_points)
+        self.room_labels = np.concatenate(self.room_labels)
+
+        self.room_idxs = np.array(room_idxs)
+        print("Rooms: ", self.room_idxs)
+        print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
+
+    def __getitem__(self, idx):  # get items in one block
+        selected_points = self.room_points[idx]
+        current_labels = self.room_labels[idx] 
+        center = np.mean(selected_points, axis=0)
+        N_points = selected_points.shape[0]
+
+        # add normalized xyz
+        current_points = np.zeros((N_points, 3))
+        selected_points[:, 0] = selected_points[:, 0] - center[0]
+        selected_points[:, 1] = selected_points[:, 1] - center[1]
+        current_points[:, 0:3] = selected_points
+
+        return current_points, current_labels
 
     def __len__(self):
         return len(self.room_idxs)
@@ -305,7 +377,7 @@ class S3DISDataset_eval(Dataset):  # load data block by block, without using h5 
             # print("Total labels: ", len(labels))
             coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
             self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
-            block_points, block_labels = indoor3d_util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
+            block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
                                                        stride=self.stride, random_sample=False, sample_num=None, use_all_points=self.use_all_points)
             # print("Block labels: ", block_labels.shape)
             room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
@@ -338,24 +410,3 @@ class S3DISDataset_eval(Dataset):  # load data block by block, without using h5 
 
     def __len__(self):
         return len(self.room_idxs)
-
-
-if __name__ == '__main__':
-    train = ModelNet40(1024)
-    test = ModelNet40(1024, 'test')
-    data, label = train[0]
-    print(data.shape)
-    print(label.shape)
-
-    trainval = ShapeNetPart(2048, 'trainval')
-    test = ShapeNetPart(2048, 'test')
-    data, label, seg = trainval[0]
-    print(data.shape)
-    print(label.shape)
-    print(seg.shape)
-
-    train = S3DIS(4096)
-    test = S3DIS(4096, 'test')
-    data, seg = train[0]
-    print(data.shape)
-    print(seg.shape)

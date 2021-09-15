@@ -19,6 +19,8 @@ CLASS_MAP = {
     22: 4
 }
 
+CLASSES = [0, 1, 2, 3, 4]
+
 def load_h5_pointcloud(filename):
     """Load a pointcloud in HDF5 format from `filename`"""
     file = h5py.File(filename, 'r+')
@@ -47,7 +49,7 @@ def load_pointcloud(filename):
     else:
         raise Exception('Unsupported file type!')
 
-def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5):
+def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes = CLASSES, min_num = 100):
     """Load a set of pointclouds from a directory and save them in a txt file
 
     Args:
@@ -62,7 +64,6 @@ def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5):
     files = os.listdir(dir)
     acceptable_files = [f for f in files if f.split('.')[-1] in ['h5', 'las']]
 
-    n = 1
     tile_num = 0
     for i in tqdm(range(len(acceptable_files)), desc = "Loading PCs"):
         f = acceptable_files[i]
@@ -70,14 +71,19 @@ def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5):
 
         data, labels = utils.room2blocks(whole_data, whole_labels, 10000, block_size = block_size, random_sample = False, stride = block_size/2, sample_num = sample_num, use_all_points = True)
 
-        for i in tqdm(range(data.shape[0]), desc = "Saving Data"):
-            this_data, this_labels = convert_pc_labels(data[i], labels[i])
-            np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(tile_num)), np.hstack((this_data, np.reshape(this_labels, (len(this_labels), 1)))))
-            data_batch_list.append(this_data)
-            label_batch_list.append(this_labels)
-            tile_num += 1
-
-        n += 1
+        num_good = 0
+        with tqdm(range(data.shape[0]), desc = "Saving Data") as t:
+            for i in range(data.shape[0]):
+                this_data, this_labels = convert_pc_labels(data[i], labels[i])
+                class_counts = [len(np.where(this_labels == c)[0]) for c in classes]
+                if all([count > min_num for count in class_counts]):
+                    np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(tile_num)), np.hstack((this_data, np.reshape(this_labels, (len(this_labels), 1)))))
+                    data_batch_list.append(this_data)
+                    label_batch_list.append(this_labels)
+                    tile_num += 1
+                    num_good += 1
+                    t.set_postfix(num_good = num_good)
+                t.update()
     
     data_batches = np.concatenate(data_batch_list, 0)
     label_batches = np.concatenate(label_batch_list, 0)
@@ -230,12 +236,17 @@ def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_f
     """
     with open(categories_file, 'r') as f:
         categories = json.load(f)
+
     with open(features_file, 'r') as f:
         features = json.load(f)
 
     if not os.path.isdir(base_dir):
         os.mkdir(base_dir)
-    if not os.path.isdir(data_folder):
+
+    if os.path.isdir(data_folder):
+        os.rmdir(data_folder)
+        os.mkdir(data_folder)
+    else:
         os.mkdir(data_folder)
 
     categories = {float(c): categories[c] for c in categories.keys()}
@@ -248,7 +259,7 @@ def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_f
     print("NPY: ", npy_data_folder)
 
     # print("Loading pointcloud data")
-    # load_pointcloud_dir(pc_folder, data_folder, block_size = block_size, sample_num = sample_num)
+    load_pointcloud_dir(pc_folder, data_folder, block_size = block_size, sample_num = sample_num)
     print("Extracting annotations...")
     extract_annotations(area, data_folder, processed_data_folder, categories, features, features_output)
     print("Writing annotation paths...")
