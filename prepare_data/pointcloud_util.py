@@ -62,10 +62,9 @@ def collect_point_label(anno_path, out_filename, file_format='txt'):
     if file_format == 'txt':
         fout = open(out_filename, 'w+')
         for i in range(data_label.shape[0]):
-            fout.write('%f %f %f %d %d %d %d\n' % \
+            fout.write('%f %f %f %d\n' % \
                        (data_label[i, 0], data_label[i, 1], data_label[i, 2],
-                        data_label[i, 3], data_label[i, 4], data_label[i, 5],
-                        data_label[i, 6]))
+                        data_label[i, 3]))
         fout.close()
     elif file_format == 'numpy':
         np.save(out_filename, data_label)
@@ -186,11 +185,24 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
     for idx in range(len(xbeg_list)):
         xbeg = xbeg_list[idx]
         ybeg = ybeg_list[idx]
-        xcond = (data[:, 0] <= xbeg + block_size) & (data[:, 0] >= xbeg)
-        ycond = (data[:, 1] <= ybeg + block_size) & (data[:, 1] >= ybeg)
-        cond = xcond & ycond
-        if np.sum(cond) < 1000:  # discard block if there are less than 100 pts.
-            continue
+
+        if random_sample:
+            found = False
+            while not found:
+                xcond = (data[:, 0] <= xbeg + block_size) & (data[:, 0] >= xbeg)
+                ycond = (data[:, 1] <= ybeg + block_size) & (data[:, 1] >= ybeg)
+                cond = xcond & ycond
+                if np.sum(cond) < 1000:  # discard block if there are less than 100 pts.
+                    xbeg = np.random.uniform(x_lb, x_ub)
+                    ybeg = np.random.uniform(y_lb, y_ub)
+                    continue
+                found = True
+        else:
+            xcond = (data[:, 0] <= xbeg + block_size) & (data[:, 0] >= xbeg)
+            ycond = (data[:, 1] <= ybeg + block_size) & (data[:, 1] >= ybeg)
+            cond = xcond & ycond
+            if np.sum(cond) < 1000:  # discard block if there are less than 100 pts.
+                continue
 
         block_data = data[cond, :]
         block_label = label[cond]

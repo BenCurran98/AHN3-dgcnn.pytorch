@@ -49,7 +49,7 @@ class FugroDataset(Dataset):
     sample_num : int
         Number of blocks to randomly sample from each tile (default 5)
     """
-    def __init__(self, split='train', data_root='', num_point=4096, block_size=30.0, use_all_points=False, test_prop = 0.2, classes = [0, 1, 2, 3, 4], sample_num = 5):
+    def __init__(self, split='train', data_root='', num_point=4096, block_size=30.0, use_all_points=False, test_prop = 0.2, classes = [0, 1, 2, 3, 4], sample_num = 5, class_min = 100):
         super().__init__()
         self.num_point = num_point
         self.block_size = block_size
@@ -77,12 +77,52 @@ class FugroDataset(Dataset):
             points, labels = room_data[:, 0:3], room_data[:, 3]
             coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
             self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
-            block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
-                                                       stride=self.block_size/3, random_sample=True, sample_num=sample_num, use_all_points=self.use_all_points)
 
-            room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
-            self.room_points.append(block_points), self.room_labels.append(block_labels)
-            num_point_all.append(labels.size)
+            las = laspy.create(file_version = "1.2", point_format = 3) 
+
+            las.x = points[:, 0]
+            las.y = points[:, 1]
+            las.z = points[:, 2]
+
+            las.classification = labels
+
+            las.write("../DataSampleTrain/{}_block_data{}.las".format(split, index))
+
+            if split == "train": 
+                found = 0
+                while found < sample_num:
+                    block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
+                                                            stride=self.block_size/3, random_sample=True, sample_num=sample_num - found, use_all_points=self.use_all_points)
+            
+                    for i in range(block_points.shape[0]):
+                        this_block_points = block_points[i, :, :]
+                        this_block_labels = block_labels[i, :]
+                        label_counts = [len(np.where(this_block_labels == c)[0]) for c in classes]
+                        # print("Label counts: ", label_counts)
+                        if all([c > class_min for c in label_counts]):
+                            # print("FOUND ONE: ", found)
+                            found += 1
+                            room_idxs.extend([index])
+                            self.room_points.append(np.reshape(this_block_points, (1, this_block_points.shape[0], this_block_points.shape[1])))
+                            self.room_labels.append(np.reshape(this_block_labels, (1, this_block_labels.shape[0])))
+                            num_point_all.append(this_block_labels.size)
+
+                las = laspy.create(file_version = "1.2", point_format = 3) 
+
+                las.x = self.room_points[-1][0, :, 0]
+                las.y = self.room_points[-1][0, :, 1]
+                las.z = self.room_points[-1][0, :, 2]
+
+                las.classification = self.room_labels[-1][0, :]
+
+                las.write("../DataSampleTrain/{}_subsampled__block_data{}.las".format(split, index))
+
+            else:
+                block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
+                                                            stride=self.block_size/3, random_sample=True, sample_num=sample_num, use_all_points=self.use_all_points)
+                room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
+                self.room_points.append(block_points), self.room_labels.append(block_labels)
+                num_point_all.append(labels.size)
         self.room_points = np.concatenate(self.room_points)
         self.room_labels = np.concatenate(self.room_labels)
 
@@ -188,9 +228,12 @@ class FugroDataset_eval(Dataset):
         
         self.room_points, self.room_labels = [], []
         self.room_coord_min, self.room_coord_max = [], []
+        self.centres = []
 
         room_idxs = []
-        for index, room_name in enumerate(rooms_split):
+        for index in tqdm(range(len(rooms_split)), "Sampling Tiles"):
+            room_name = rooms_split[index]
+            room_path = os.path.join(data_root, room_name)
             room_path = os.path.join(data_root, room_name)
             room_data = np.load(room_path)
             points, labels = room_data[:, 0:3], room_data[:, 3]
@@ -198,13 +241,21 @@ class FugroDataset_eval(Dataset):
             self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
             block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
                                                        stride=self.block_size, random_sample=False, sample_num=None, use_all_points=self.use_all_points)
+            these_centres = []
+            for i in range(block_points.shape[0]):
+                this_centre = np.mean(block_points[i, :])
+                these_centres.append(this_centre)
+            f = open("../DataSampleTest/block_data{}.txt".format(index), "w")
+            these_points = np.concatenate(block_points)
+            for i in range(these_points.shape[0]):
+                f.write("%f %f %f\n" % (these_points[i, 0], these_points[i, 1], these_points[i, 2]))
+            f.close()
             room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
             self.room_points.append(block_points), self.room_labels.append(block_labels)
         self.room_points = np.concatenate(self.room_points)
         self.room_labels = np.concatenate(self.room_labels)
 
         self.room_idxs = np.array(room_idxs)
-        print("Rooms: ", self.room_idxs)
         print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
 
     def __getitem__(self, idx):  # get items in one block
@@ -219,7 +270,7 @@ class FugroDataset_eval(Dataset):
         selected_points[:, 1] = selected_points[:, 1] - center[1]
         current_points[:, 0:3] = selected_points
 
-        return current_points, current_labels
+        return current_points, current_labels, center
 
     def __len__(self):
         return len(self.room_idxs)

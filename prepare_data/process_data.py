@@ -12,11 +12,11 @@ import pointcloud_util as utils
 # map classes in the dataset to classes for the DGCNN classifier
 CLASS_MAP = {
     2: 1,
-    3: 2,
-    4: 2,
+    3: 4,
+    4: 4,
     6: 0,
-    14: 3,
-    22: 4
+    14: 2,
+    22: 3
 }
 
 CLASSES = [0, 1, 2, 3, 4]
@@ -49,7 +49,7 @@ def load_pointcloud(filename):
     else:
         raise Exception('Unsupported file type!')
 
-def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes = CLASSES, min_num = 100):
+def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes = CLASSES, min_num = 100, las_dir = "../Datasets/converted-pcs"):
     """Load a set of pointclouds from a directory and save them in a txt file
 
     Args:
@@ -65,6 +65,10 @@ def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes =
     acceptable_files = [f for f in files if f.split('.')[-1] in ['h5', 'las']]
 
     tile_num = 0
+
+    if not os.path.isdir(las_dir):
+        os.mkdir(las_dir)
+
     for i in tqdm(range(len(acceptable_files)), desc = "Loading PCs"):
         f = acceptable_files[i]
         whole_data, whole_labels = load_pointcloud(os.path.join(dir, f))
@@ -75,6 +79,13 @@ def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes =
         with tqdm(range(data.shape[0]), desc = "Saving Data") as t:
             for i in range(data.shape[0]):
                 this_data, this_labels = convert_pc_labels(data[i], labels[i])
+                las = laspy.create(file_version = "1.2", point_format = 3) 
+
+                las.x = this_data[:, 0]
+                las.y = this_data[:, 1]
+                las.z = this_data[:, 2]
+                las.classification = this_labels
+                las.write(os.path.join(las_dir, "Area_{}.las".format(tile_num)))
                 class_counts = [len(np.where(this_labels == c)[0]) for c in classes]
                 if all([count > min_num for count in class_counts]):
                     np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(tile_num)), np.hstack((this_data, np.reshape(this_labels, (len(this_labels), 1)))))
@@ -200,8 +211,8 @@ def collect_3d_data(root_dir, output_folder):
 
     for anno_path in tqdm(anno_paths):
         elements = anno_path.split('/')
-        out_filename = elements[-3] + '_' + elements[-2] + '.npy'
-        utils.collect_point_label(anno_path, os.path.join(output_folder, out_filename), 'numpy')
+        out_filename = elements[-3] + '_' + elements[-2] + '.txt'
+        utils.collect_point_label(anno_path, os.path.join(output_folder, out_filename), 'txt')
 
 def write_npy_file_names(root_dir, data_path):
     """Save the names of the numpy data files for future reference
@@ -258,8 +269,8 @@ def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_f
     print("Processed: ", processed_data_folder)
     print("NPY: ", npy_data_folder)
 
-    # print("Loading pointcloud data")
-    load_pointcloud_dir(pc_folder, data_folder, block_size = block_size, sample_num = sample_num)
+    print("Loading pointcloud data")
+    load_pointcloud_dir(pc_folder, data_folder, block_size = block_size, sample_num = sample_num, min_num = args.min_class_num)
     print("Extracting annotations...")
     extract_annotations(area, data_folder, processed_data_folder, categories, features, features_output)
     print("Writing annotation paths...")
@@ -288,6 +299,7 @@ if __name__ == "__main__":
     parser.add_argument('--npy_data_folder', type = str, default = os.path.join(BASE_DIR, 'data_as_S3DIS_NRI_NPY'), help = 'Output folder of the data summary')
     parser.add_argument('--block_size', type = int, default = 100, help = 'Size of blocks to divide pointclouds into')
     parser.add_argument('--sample_num', type = int, default = 5, help = 'Number of tile samples to take from each point cloud')
+    parser.add_argument('--min_class_num', type = int, default = 100, help = 'Minimum number of points per class for the pointcloud to be used')
     
     args = parser.parse_args()
     
