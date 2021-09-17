@@ -1,3 +1,5 @@
 building
 ground
+pole
+network
 vegetation

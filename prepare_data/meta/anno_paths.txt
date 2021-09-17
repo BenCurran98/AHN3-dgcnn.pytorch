@@ -1,6 +1,17 @@
-/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_1/Training/Annotations
-/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_6/Training/Annotations
-/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_5/Training/Annotations
-/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_4/Training/Annotations
-/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_2/Training/Annotations
-/home/ben/InnovationConference/AHN3-dgcnn.pytorch/../Datasets/powercor_processed/Area_3/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_1/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_2/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_3/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_4/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_5/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_6/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_7/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_8/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_9/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_10/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_11/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_12/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_13/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_14/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_15/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_16/Training/Annotations
+/media/ben/T7 Touch/InnovationConference/dgcnn.pytorch/../Datasets/Training/processed/Area_17/Training/Annotations

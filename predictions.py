@@ -10,8 +10,7 @@ from prepare_data.pointcloud_util import g_label2color
 
 def get_predictions(pred_file, las_file):
     result = np.loadtxt(pred_file)
-    # probs = softmax(result[:, 8:], axis = 1)
-    # labels = np.argmax(probs, axis = 1) 
+    
     print(result.shape)
     labels = result[:, 3]
     points = result[:, 0:3]

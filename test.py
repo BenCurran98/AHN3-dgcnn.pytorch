@@ -116,7 +116,7 @@ def test(k, io,
                     seg_pred = model(data)
                     seg_pred = seg_pred.permute(0, 2, 1).contiguous()
                     vals, pred = seg_pred.max(dim=2)[1]
-                    pred[torch.where(vals < min_class_confidence)]) = UNCLASSIFIED
+                    pred[torch.where(vals < min_class_confidence)] = UNCLASSIFIED
                     seg_np = seg.cpu().numpy()
                     pred_np = pred.detach().cpu().numpy()
                     test_true_cls.append(seg_np.reshape(-1))

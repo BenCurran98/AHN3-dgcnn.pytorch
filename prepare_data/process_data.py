@@ -211,8 +211,8 @@ def collect_3d_data(root_dir, output_folder):
 
     for anno_path in tqdm(anno_paths):
         elements = anno_path.split('/')
-        out_filename = elements[-3] + '_' + elements[-2] + '.txt'
-        utils.collect_point_label(anno_path, os.path.join(output_folder, out_filename), 'txt')
+        out_filename = elements[-3] + '_' + elements[-2] + '.npy'
+        utils.collect_point_label(anno_path, os.path.join(output_folder, out_filename), 'numpy')
 
 def write_npy_file_names(root_dir, data_path):
     """Save the names of the numpy data files for future reference
