@@ -92,7 +92,7 @@ class FugroDataset(Dataset):
                 found = 0
                 while found < sample_num:
                     block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
-                                                            stride=self.block_size/3, random_sample=True, sample_num=sample_num - found, use_all_points=self.use_all_points)
+                                                            stride=self.block_size/10, random_sample=True, sample_num=sample_num - found, use_all_points=self.use_all_points)
             
                     for i in range(block_points.shape[0]):
                         this_block_points = block_points[i, :, :]
@@ -100,7 +100,7 @@ class FugroDataset(Dataset):
                         label_counts = [len(np.where(this_block_labels == c)[0]) for c in classes]
                         # print("Label counts: ", label_counts)
                         if all([c > class_min for c in label_counts]):
-                            # print("FOUND ONE: ", found)
+                            print("FOUND ONE: ", found)
                             found += 1
                             room_idxs.extend([index])
                             self.room_points.append(np.reshape(this_block_points, (1, this_block_points.shape[0], this_block_points.shape[1])))

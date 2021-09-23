@@ -111,33 +111,51 @@ class DGCNN(nn.Module):
         self.conv9 = nn.Conv1d(256, self.num_classes, kernel_size=1, bias=False)
         
 
-    def forward(self, x):
+    def forward(self, x, depth = 10):
         num_points = x.size(2)
 
         x = get_graph_feature(x, k=self.k, dim9=True, use_cuda=self.use_cuda)   # (batch_size, 9, num_points) -> (batch_size, 9*2, num_points, k)
         x = self.conv1(x)                       # (batch_size, 9*2, num_points, k) -> (batch_size, 64, num_points, k)
         x = self.conv2(x)                       # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points, k)
         x1 = x.max(dim=-1, keepdim=False)[0]    # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points)
+        if depth == 1:
+            return x1
 
         x = get_graph_feature(x1, k=self.k, use_cuda=self.use_cuda)     # (batch_size, 64, num_points) -> (batch_size, 64*2, num_points, k)
         x = self.conv3(x)                       # (batch_size, 64*2, num_points, k) -> (batch_size, 64, num_points, k)
         x = self.conv4(x)                       # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points, k)
         x2 = x.max(dim=-1, keepdim=False)[0]    # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points)
+        if depth == 2:
+            return x2
 
         x = get_graph_feature(x2, k=self.k, use_cuda=self.use_cuda)     # (batch_size, 64, num_points) -> (batch_size, 64*2, num_points, k)
         x = self.conv5(x)                       # (batch_size, 64*2, num_points, k) -> (batch_size, 64, num_points, k)
         x3 = x.max(dim=-1, keepdim=False)[0]    # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points)
+        if depth == 3:
+            return x3
 
         x = torch.cat((x1, x2, x3), dim=1)      # (batch_size, 64*3, num_points)
+        if depth == 4:
+                return x
 
         x = self.conv6(x)                       # (batch_size, 64*3, num_points) -> (batch_size, emb_dims, num_points)
+        if depth == 5:
+                return x
         x = x.max(dim=-1, keepdim=True)[0]      # (batch_size, emb_dims, num_points) -> (batch_size, emb_dims, 1)
+        if depth == 6:
+                return x
 
         x = x.repeat(1, 1, num_points)          # (batch_size, 1024, num_points)
         x = torch.cat((x, x1, x2, x3), dim=1)   # (batch_size, 1024+64*3, num_points)
 
+        if depth == 7:
+                return x
         x = self.conv7(x)                       # (batch_size, 1024+64*3, num_points) -> (batch_size, 512, num_points)
+        if depth == 8:
+                return x
         x = self.conv8(x)                       # (batch_size, 512, num_points) -> (batch_size, 256, num_points)
+        if depth == 9:
+                return x
         x = self.dp1(x)
         x = self.conv9(x)                       # (batch_size, 256, num_points) -> (batch_size, 13, num_points)
         
