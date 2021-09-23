@@ -4,5 +4,8 @@
 __pycache__
 data
 checkpoints
-log_tensorboard_*
+log_tensorboard/*
+tensorboard_logs/*
 *.sbatch
+log_tensorboard
+*.txt

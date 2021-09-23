@@ -1,0 +1,208 @@
+import os
+import torch
+from data import FugroDataset_eval
+from model import DGCNN
+import numpy as np
+from torch.utils.data import DataLoader
+from util import *
+import sklearn.metrics as metrics
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+UNCLASSIFIED = 31
+
+def test(k, io, 
+            data_dir = "/media/ben/T7 Touch/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
+            num_points = 5000,
+            block_size = 30.0,
+            num_classes = 5,
+            test_batch_size = 8,
+            dropout = 0.5,
+            emb_dims = 1024,
+            use_all_points = False,
+            cuda = False,
+            min_class_confidence = 0.8,
+            model_label = "dgcnn_model",
+            num_threads = 8,
+            num_interop_threads = 2,
+            model_root = "checkpoints/dgcnn",
+            pred_dir = "predict"):
+    """Perform inference using a DGCNN model
+
+    Args:
+        k (int): Number of neighbours to calculate in feature spaces
+        io (IOStream): Stream where log data is sent to
+        data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "/media/ben/T7 Touch/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY".
+        num_points (int, optional): Number of points to sample from each block. Defaults to 5000.
+        block_size (float, optional): Size of blocks to sample from each tile. Defaults to 30.0.
+        num_classes (int, optional): Number of classes to train on. Defaults to 5.
+        test_batch_size (int, optional): Number of test samples in each batch. Defaults to 8.
+        dropout (float, optional): Dropout probability for dropout layer in model. Defaults to 0.5.
+        emb_dims (int, optional): Dimensions to embed the global feature space into. Defaults to 1024.
+        use_all_points (bool, optional): Whether to use all points in a block or to subsample. Defaults to False.
+        cuda (bool, optional): Whether to use CUDA device for training. Defaults to False.
+        min_class_confidence (float, optional): Minimum confidence value for the model to label a point as belonging to a class
+        model_label (str, optional): Label to assign to the model for IO purposes. Defaults to "dgcnn_model".
+        num_threads (int, optional): Number of primary threads for PyTorch to use in training. Defaults to 8.
+        num_interop_threads (int, optional): Number of secondary threads for PyTorch to use for training. Defaults to 2.
+        model_root (str, optional): Directory containing saved model files. Defaults to "checkpoints/dgcnn".
+        pred_dir (str, optional): Directory to output the predictions into
+    """
+    DUMP_DIR = pred_dir
+    torch.set_num_threads(num_threads)
+    torch.set_num_interop_threads(num_interop_threads)
+    all_true_cls = []
+    all_pred_cls = []
+    all_true_seg = []
+    all_pred_seg = []
+    for test_area in [1]:
+        test_area = str(test_area)
+        if (test_area == 'all') or (test_area == test_area):
+            dataset = FugroDataset_eval(split='test', data_root=data_dir, num_point=num_points,
+                                   block_size=block_size, use_all_points=use_all_points)
+            test_loader = DataLoader(dataset, batch_size=test_batch_size, shuffle=False, drop_last=False)
+
+            room_idx = np.array(dataset.room_idxs)
+
+            fout_data_label = []
+            true_data_labels = []
+            for room_id in np.unique(room_idx):
+                out_data_label_filename = 'Area_%s_room_%d_pred_gt.txt' % (test_area, room_id)
+                out_data_label_filename = os.path.join(DUMP_DIR, out_data_label_filename)
+                out_true_label_filename = 'Area_%s_room_%d_true_labels.txt' % (test_area, room_id)
+                out_true_label_filename = os.path.join(DUMP_DIR, out_true_label_filename)
+                if os.path.isfile(out_data_label_filename):
+                    os.remove(out_data_label_filename)
+                if os.path.isfile(out_true_label_filename):
+                    os.remove(out_true_label_filename)
+                fout_data_label.append(open(out_data_label_filename, 'a'))
+                true_data_labels.append(open(out_true_label_filename, 'a'))
+
+            device = torch.device("cuda" if cuda else "cpu")
+
+            io.cprint('Start overall evaluation...')
+
+            model = DGCNN(num_classes, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
+
+            if cuda:
+                checkpoint = torch.load(os.path.join(model_root, '%s.t7' % model_label))
+            else:
+                checkpoint = torch.load(os.path.join(model_root, '%s.t7' % model_label), map_location=torch.device('cpu'))
+            
+            print("model: ", os.path.join(model_root, '%s.t7' % model_label))
+            model.load_state_dict(checkpoint['model_state_dict'])
+            model = model.eval()
+
+            count_parameters(model)
+
+            io.cprint('%s.t7 restored.' % model_label)
+
+            test_acc = 0.0
+            count = 0.0
+            test_true_cls = []
+            test_pred_cls = []
+            test_true_seg = []
+            test_pred_seg = []
+
+            io.cprint('Start testing ...')
+            num_batch = 0
+            
+            with tqdm(test_loader, desc = "Testing") as t:
+                for data, seg, centers in tqdm(test_loader):
+                    data, seg = data.to(device), seg.to(device)
+                    data = data.permute(0, 2, 1).float()
+                    batch_size = data.size()[0]
+
+                    seg_pred = model(data)
+                    seg_pred = seg_pred.permute(0, 2, 1).contiguous()
+                    vals, pred = seg_pred.max(dim=2)[1]
+                    pred[torch.where(vals < min_class_confidence)] = UNCLASSIFIED
+                    seg_np = seg.cpu().numpy()
+                    pred_np = pred.detach().cpu().numpy()
+                    test_true_cls.append(seg_np.reshape(-1))
+                    test_pred_cls.append(pred_np.reshape(-1))
+                    test_true_seg.append(seg_np)
+                    test_pred_seg.append(pred_np)
+
+                    # write prediction results
+                    for batch_id in range(batch_size):
+                        pts = data[batch_id, :, :]
+                        
+                        pts = pts.permute(1, 0).float()
+                        l = seg[batch_id, :]
+                        pred_ = pred[batch_id, :]
+                        logits = seg_pred[batch_id, :, :]
+                        # compute room_id
+                        room_id = room_idx[num_batch + batch_id]
+                        for i in range(pts.shape[0]):
+                            fout_data_label[room_id].write('%f %f %f %d\n' % (
+                                (pts[i, 0] + centers[batch_id, 0]), (pts[i, 1] + centers[batch_id, 1]), pts[i, 2],
+                                pred_[i]))
+
+                            true_data_labels[room_id].write("%d\n" % l[i])
+                    num_batch += batch_size
+                    torch.cuda.empty_cache()
+
+                    balanced_acc = metrics.balanced_accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
+                    acc = metrics.accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
+                    t.set_postfix(A = acc, BA = balanced_acc)
+                    t.update()
+
+            for room_id in np.unique(room_idx):
+                fout_data_label[room_id].close()
+
+            test_ious = calculate_sem_IoU(test_pred_cls, test_true_cls, num_classes)
+            test_true_cls = np.concatenate(test_true_cls)
+            test_pred_cls = np.concatenate(test_pred_cls)
+            test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
+            avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
+            
+            outstr = 'Test :: test area: %s, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (test_area,
+                                                                                                    test_acc,
+                                                                                                    avg_per_class_acc,
+                                                                                                    np.mean(test_ious))
+            io.cprint(outstr)
+
+            # calculate confusion matrix
+            conf_mat = metrics.confusion_matrix(test_true_cls, test_pred_cls)
+            io.cprint('Confusion matrix:')
+            io.cprint(str(conf_mat))
+
+            all_true_cls.append(test_true_cls)
+            all_pred_cls.append(test_pred_cls)
+            all_true_seg.append(test_true_seg)
+            all_pred_seg.append(test_pred_seg)
+
+    if test_area == 'all':
+        all_true_cls = np.concatenate(all_true_cls)
+        all_pred_cls = np.concatenate(all_pred_cls)
+        all_acc = metrics.accuracy_score(all_true_cls, all_pred_cls)
+        avg_per_class_acc = metrics.balanced_accuracy_score(all_true_cls, all_pred_cls)
+        all_true_seg = np.concatenate(all_true_seg, axis=0)
+        all_pred_seg = np.concatenate(all_pred_seg, axis=0)
+        all_ious = calculate_sem_IoU(all_pred_seg, all_true_seg, num_classes)
+        outstr = 'Overall Test :: test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (all_acc,
+                                                                                         avg_per_class_acc,
+                                                                                         np.mean(all_ious))
+        io.cprint(outstr)
+
+def test_args(args, io):
+    test(
+        args.k,
+        io,
+        data_dir = args.data_dir,
+        num_points = args.num_points,
+        block_size = args.block_size,
+        num_classes = args.num_classes,
+        test_batch_size = args.test_batch_size,
+        dropout = args.dropout,
+        emb_dims = args.emb_dims,
+        use_all_points = args.use_all_points,
+        cuda = args.cuda,
+        min_class_confidence = args.min_class_confidence,
+        model_label = args.model_label, 
+        num_threads = args.num_threads, 
+        num_interop_threads = args.num_interop_threads,
+        model_root = args.model_root,
+        pred_dir = args.test_visu_dir
+    )

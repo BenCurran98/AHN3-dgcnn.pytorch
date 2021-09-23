@@ -2,6 +2,7 @@ import numpy as np
 import glob
 import os
 import sys
+from tqdm import tqdm
 
 BASE_DIR = 'D:/Documents/Datasets/'  # base directory of datasets
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +18,9 @@ g_class2label = {cls: i for i, cls in enumerate(g_classes)}
 g_class2color = {'vegetation': [0, 255, 0],
                  'ground': [0, 0, 255],
                  'building': [0, 255, 255],
-                 'water': [255, 255, 0]}
+                 'pole': [120, 200, 255],
+                 'network': [130, 210, 40],
+                 'noise': [0, 0, 0]}
 g_easy_view_labels = [7, 8, 9, 10, 11, 1]  # todo:
 g_label2color = {g_classes.index(cls): g_class2color[cls] for cls in g_classes}
 
@@ -44,8 +47,11 @@ def collect_point_label(anno_path, out_filename, file_format='txt'):
     for f in glob.glob(os.path.join(anno_path, '*.txt')):
         cls = os.path.basename(f).split('.')[0] # TODO: '_', changed because points in the same class are not separated
         if cls not in g_classes:  # note: in some room there is 'staris' class..
-            cls = 'clutter'
+            cls = 'noise'
+        
         points = np.loadtxt(f)
+        if len(points.shape) == 1:
+            points = np.reshape(points, (1, points.shape[0]))
         labels = np.ones((points.shape[0], 1)) * g_class2label[cls]
         points_list.append(np.concatenate([points, labels], 1))  # Nx7
 
@@ -56,10 +62,9 @@ def collect_point_label(anno_path, out_filename, file_format='txt'):
     if file_format == 'txt':
         fout = open(out_filename, 'w+')
         for i in range(data_label.shape[0]):
-            fout.write('%f %f %f %d %d %d %d\n' % \
+            fout.write('%f %f %f %d\n' % \
                        (data_label[i, 0], data_label[i, 1], data_label[i, 2],
-                        data_label[i, 3], data_label[i, 4], data_label[i, 5],
-                        data_label[i, 6]))
+                        data_label[i, 3]))
         fout.close()
     elif file_format == 'numpy':
         np.save(out_filename, data_label)
@@ -146,29 +151,33 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
     """
     assert (stride <= block_size)
 
-    limit = np.amax(data, 0)[0:3]
+    x_ub = np.amax(data[:, 0])
+    x_lb = np.amin(data[:, 0])
+    
+    y_ub = np.amax(data[:, 1])
+    y_lb = np.amin(data[:, 1])
 
     # Get the corner location for our sampling blocks    
     xbeg_list = []
     ybeg_list = []
     if not random_sample:
-        num_block_x = int(np.ceil((limit[0] - block_size) / stride)) + 1
-        num_block_y = int(np.ceil((limit[1] - block_size) / stride)) + 1
+        num_block_x = int(np.ceil(((x_ub - x_lb) - block_size) / stride)) + 1
+        num_block_y = int(np.ceil(((y_ub - y_lb) - block_size) / stride)) + 1
         for i in range(num_block_x):
             for j in range(num_block_y):
-                xbeg_list.append(i * stride)
-                ybeg_list.append(j * stride)
+                xbeg_list.append(x_lb + i * stride)
+                ybeg_list.append(y_lb + j * stride)
     else:
-        num_block_x = int(np.ceil(limit[0] / block_size))
-        num_block_y = int(np.ceil(limit[1] / block_size))
+        num_block_x = int(np.ceil((x_ub - x_lb) / block_size))
+        num_block_y = int(np.ceil((y_ub - y_lb) / block_size))
         if sample_num is None:
             sample_num = num_block_x * num_block_y * sample_aug
         for _ in range(sample_num):
-            xbeg = np.random.uniform(-block_size, limit[0])
-            ybeg = np.random.uniform(-block_size, limit[1])
+            xbeg = np.random.uniform(x_lb, x_ub)
+            ybeg = np.random.uniform(y_lb, y_ub)
             xbeg_list.append(xbeg)
             ybeg_list.append(ybeg)
-
+            
     # Collect blocks
     block_data_list = []
     block_label_list = []
@@ -176,11 +185,24 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
     for idx in range(len(xbeg_list)):
         xbeg = xbeg_list[idx]
         ybeg = ybeg_list[idx]
-        xcond = (data[:, 0] <= xbeg + block_size) & (data[:, 0] >= xbeg)
-        ycond = (data[:, 1] <= ybeg + block_size) & (data[:, 1] >= ybeg)
-        cond = xcond & ycond
-        if np.sum(cond) < 100:  # discard block if there are less than 100 pts.
-            continue
+
+        if random_sample:
+            found = False
+            while not found:
+                xcond = (data[:, 0] <= xbeg + block_size) & (data[:, 0] >= xbeg)
+                ycond = (data[:, 1] <= ybeg + block_size) & (data[:, 1] >= ybeg)
+                cond = xcond & ycond
+                if np.sum(cond) < 1000:  # discard block if there are less than 100 pts.
+                    xbeg = np.random.uniform(x_lb, x_ub)
+                    ybeg = np.random.uniform(y_lb, y_ub)
+                    continue
+                found = True
+        else:
+            xcond = (data[:, 0] <= xbeg + block_size) & (data[:, 0] >= xbeg)
+            ycond = (data[:, 1] <= ybeg + block_size) & (data[:, 1] >= ybeg)
+            cond = xcond & ycond
+            if np.sum(cond) < 1000:  # discard block if there are less than 100 pts.
+                continue
 
         block_data = data[cond, :]
         block_label = label[cond]
@@ -196,11 +218,9 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
             block_label_list.append(np.expand_dims(block_label_sampled, 0))
 
     if use_all_points:
-        block_data_return, block_label_return = np.array(block_data_list), np.array(block_label_list)
+        block_data_return, block_label_return = np.array(block_data_list, dtype = object), np.array(block_label_list, dtype = object)
     else:
         block_data_return, block_label_return = np.concatenate(block_data_list, 0), np.concatenate(block_label_list, 0)
-    print('block_data_return_size:')
-    print(np.array(block_data_return).shape)
 
     return block_data_return, block_label_return
 
