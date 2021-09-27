@@ -76,12 +76,12 @@ def train(k, io,
 
     train_loader = DataLoader(
         FugroDataset(split='train', data_root=data_dir, num_point=num_points,
-                     block_size=block_size, use_all_points = use_all_points, test_prop = test_prop, sample_num = sample_num, class_min = min_class_num), num_workers=8, batch_size=train_batch_size,
+                     block_size=block_size, use_all_points = use_all_points, test_prop = test_prop, sample_num = sample_num, class_min = min_class_num, classes = range(num_classes)), num_workers=8, batch_size=train_batch_size,
         shuffle=True, drop_last=True)
 
     test_loader = DataLoader(
         FugroDataset(split='test', data_root=data_dir, num_point=num_points,
-                     block_size=block_size, test_prop = test_prop), num_workers=8, batch_size=test_batch_size,
+                     block_size=block_size, test_prop = test_prop, classes = range(num_classes)), num_workers=8, batch_size=test_batch_size,
         shuffle=True, drop_last=True)
 
     device = torch.device("cuda" if cuda else "cpu")
@@ -114,12 +114,12 @@ def train(k, io,
         model.load_state_dict(checkpoint['model_state_dict'])
         opt.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        best_test_iou = checkpoint['mIOU']
+        best_per_class_acc = checkpoint['mBPCA']
         io.cprint('Use pretrained model')
     except:
         io.cprint('No existing model, starting training from scratch...')
         start_epoch = 0
-        best_test_iou = 0
+        best_per_class_acc = 0
 
     criterion = cal_loss
 
@@ -129,9 +129,9 @@ def train(k, io,
 
     writer_train_loss = SummaryWriter(os.path.join(log_dir, 'train_loss'))
     writer_train_accuracy = SummaryWriter(os.path.join(log_dir), 'train_accuracy')
-    writer_train_iou = SummaryWriter(os.path.join(log_dir), 'train_iou')
+    writer_train_balanced_accuracy = SummaryWriter(os.path.join(log_dir), 'balanced_train_accuracy')
     writer_test_accuracy = SummaryWriter(os.path.join(log_dir), 'test_accuracy')
-    writer_test_iou = SummaryWriter(os.path.join(log_dir), 'test_io')
+    writer_test_balanced_accuracy = SummaryWriter(os.path.join(log_dir), 'balanced_test_accuracy')
 
     for epoch in range(start_epoch, epochs):
         ####################
@@ -153,20 +153,24 @@ def train(k, io,
                 batch_size = data.size()[0]
                 opt.zero_grad()
                 seg_pred = model(data) # batch_size * num_points * num_classes
+                seg_pred = F.softmax(seg_pred, dim = 1)
 
                 # only use the points indicated by the mask in back propogation- this acts as a kind of label balancing
-                focus_seg = torch.zeros_like(seg)
-                focus_pred = torch.zeros_like(seg_pred)
+                focus_seg = num_classes * torch.ones_like(seg)
+                focus_pred = torch.zeros((seg_pred.shape[0], num_classes + 1, seg_pred.shape[2]))
                 for i in range(mask.shape[0]):
                     masked_idxs = np.where(mask[i, :])[0]
                     focus_seg[i, masked_idxs] = seg[i, masked_idxs]
-                    focus_pred[i, :, masked_idxs] = seg_pred[i, :, masked_idxs]
+                    focus_pred[i, :, masked_idxs] = torch.cat((seg_pred[i, :, masked_idxs], torch.zeros(1, len(masked_idxs))), dim = 0)
+                    for j in range(len(mask[i, :])):
+                        if mask[i, j] == 0:
+                            focus_pred[i, num_classes, j] = 1
                 
                 seg = focus_seg
                 seg_pred = focus_pred
                 seg_pred = seg_pred.permute(0, 2, 1).contiguous()
 
-                loss = criterion(seg_pred.view(-1, num_classes), seg.view(-1, 1).squeeze().long())
+                loss = criterion(seg_pred.view(-1, num_classes + 1), seg.view(-1, 1).squeeze().long())
                 loss.backward()
                 opt.step()
                 
@@ -183,8 +187,14 @@ def train(k, io,
                 train_pred_seg.append(pred_np)
                 
                 # Report on both overall accuracy and label balanced accuracy
-                balanced_train_acc = metrics.balanced_accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
-                train_acc = metrics.accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
+                true_labels = seg_np.reshape(-1)
+                true_seg_idxs = np.where(true_labels != num_classes)[0]
+                true_labels = true_labels[true_seg_idxs]
+                pred_labels = pred_np.reshape(-1)
+                pred_idxs = np.where(pred_labels != num_classes)[0]
+                pred_labels = pred_labels[pred_idxs]
+                balanced_train_acc = metrics.balanced_accuracy_score(true_labels, pred_labels)
+                train_acc = metrics.accuracy_score(true_labels, pred_labels)
                 t.set_postfix(A = train_acc, BA = balanced_train_acc)
                 t.update()
 
@@ -200,18 +210,17 @@ def train(k, io,
         train_true_cls = np.concatenate(train_true_cls)
         train_pred_cls = np.concatenate(train_pred_cls)
         train_acc = metrics.accuracy_score(train_true_cls, train_pred_cls)
+        balanced_train_acc = metrics.balanced_accuracy_score(train_true_cls, train_pred_cls)
         avg_per_class_acc = metrics.balanced_accuracy_score(train_true_cls, train_pred_cls)
         train_true_seg = np.concatenate(train_true_seg, axis=0)
         train_pred_seg = np.concatenate(train_pred_seg, axis=0)
-        train_ious = calculate_sem_IoU(train_pred_seg, train_true_seg, num_classes)
-        outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f, train iou: %.6f' % (epoch,
+        outstr = 'Train %d, loss: %.6f, train acc: %.6f, train avg acc: %.6f' % (epoch,
                                                                                                   train_loss * 1.0 / count,
                                                                                                   train_acc,
-                                                                                                  avg_per_class_acc,
-                                                                                                  np.mean(train_ious))
+                                                                                                  avg_per_class_acc)
         io.cprint(outstr)
         writer_train_accuracy.add_scalar('Train/accuracy', train_acc, epoch)
-        writer_train_iou.add_scalar('Train/mIOU', np.mean(train_ious), epoch)
+        writer_train_balanced_accuracy.add_scalar('Train/balanced_accuracy', avg_per_class_acc, epoch)
 
         ####################
         # Test
@@ -230,6 +239,7 @@ def train(k, io,
                 data = data.permute(0, 2, 1).float()
                 batch_size = data.size()[0]
                 seg_pred = model(data)
+                seg_pred = F.softmax(seg_pred, dim = 1)
                 seg_pred = seg_pred.permute(0, 2, 1).contiguous()
                 loss = criterion(seg_pred.view(-1, num_classes), seg.view(-1, 1).squeeze().long())
                 pred = seg_pred.max(dim=2)[1]
@@ -252,24 +262,23 @@ def train(k, io,
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
         test_true_seg = np.concatenate(test_true_seg, axis=0)
         test_pred_seg = np.concatenate(test_pred_seg, axis=0)
-        test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg, num_classes)
         outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (epoch,
                                                                                               test_loss * 1.0 / count,
                                                                                               test_acc,
-                                                                                              avg_per_class_acc,
-                                                                                              np.mean(test_ious))
+                                                                                              avg_per_class_acc)
         io.cprint(outstr)
         writer_test_accuracy.add_scalar('Test/accuracy', test_acc, epoch)
-        writer_test_iou.add_scalar('Test/mIOU', np.mean(test_ious), epoch)
+        writer_test_balanced_accuracy.add_scalar('Test/balanced_accuracy', avg_per_class_acc, epoch)
+        
 
         # only save a model and its current training state if it's better than any iteration we've seen yet (sort of quality assurance)
-        if np.mean(test_ious) >= best_test_iou:
-            best_test_iou = np.mean(test_ious)
+        if avg_per_class_acc > best_per_class_acc:
+            best_per_class_acc = avg_per_class_acc
             savepath = 'checkpoints/%s/models/%s.t7' % (exp_name, model_label)
             io.cprint('Saving the best model at %s' % savepath)
             state = {
                 'epoch': epoch,
-                'mIOU': best_test_iou,
+                'mBPCA': best_per_class_acc,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': opt.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
@@ -278,9 +287,9 @@ def train(k, io,
 
     writer_train_loss.close()
     writer_train_accuracy.close()
-    writer_train_iou.close()
+    writer_train_balanced_accuracy.close()
     writer_test_accuracy.close()
-    writer_test_iou.close()
+    writer_test_balanced_accuracy.close()
 
 def train_args(args, io):
     train(

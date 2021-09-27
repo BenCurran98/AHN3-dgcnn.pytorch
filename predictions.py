@@ -5,13 +5,15 @@ from tqdm import tqdm
 import laspy
 import argparse
 from tqdm import tqdm
+from test import UNCLASSIFIED
 
 from prepare_data.pointcloud_util import g_label2color
+
+g_label2color[UNCLASSIFIED] = [0, 0, 0.2]
 
 def get_predictions(pred_file, las_file):
     result = np.loadtxt(pred_file)
     
-    print(result.shape)
     labels = result[:, 3]
     points = result[:, 0:3]
     colors = [g_label2color[c] for c in labels]

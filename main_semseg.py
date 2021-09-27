@@ -93,7 +93,7 @@ if __name__ == "__main__":
                         help = 'Number of threads to use for inter-operations in pytorch')
     parser.add_argument('--min_class_num', type = int, default = 100, 
                         help = 'Minimum number of points per class for the pointcloud to be used')
-    parser.add_argument('--model_label', type = str, default = "model_all", 
+    parser.add_argument('--model_label', type = str, default = "dgcnn_model", 
                         help = 'Label of model file')
     parser.add_argument('--min_class_confidence', type = float, default = 0.8, 
                         help = 'Minimum confidence value for the model to label a point as belonging to a class')

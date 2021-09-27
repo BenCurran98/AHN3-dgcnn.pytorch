@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from util import *
 import sklearn.metrics as metrics
 from torch.utils.tensorboard import SummaryWriter
+from torch.nn.functional import softmax
 from tqdm import tqdm
 
 UNCLASSIFIED = 31
@@ -108,14 +109,18 @@ def test(k, io,
             num_batch = 0
             
             with tqdm(test_loader, desc = "Testing") as t:
-                for data, seg, centers in tqdm(test_loader):
+                for data, seg, centers in test_loader:
                     data, seg = data.to(device), seg.to(device)
                     data = data.permute(0, 2, 1).float()
                     batch_size = data.size()[0]
 
+                    print(data.shape)
+
                     seg_pred = model(data)
                     seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-                    vals, pred = seg_pred.max(dim=2)[1]
+                    seg_pred = softmax(seg_pred, dim = 2)
+                    vals, pred = seg_pred.max(dim = 2)
+                    # vals = seg_pred.amax(dim = 2)
                     pred[torch.where(vals < min_class_confidence)] = UNCLASSIFIED
                     seg_np = seg.cpu().numpy()
                     pred_np = pred.detach().cpu().numpy()

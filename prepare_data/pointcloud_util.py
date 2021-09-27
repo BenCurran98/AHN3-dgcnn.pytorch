@@ -13,14 +13,22 @@ sys.path.append(ROOT_DIR)
 # -----------------------------------------------------------------------------
 
 DATA_PATH = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_RGB')
-g_classes = [x.rstrip() for x in open(os.path.join(ROOT_DIR, 'meta/class_names.txt'))]
+g_classes = [x.rstrip() for x in open(os.path.join(ROOT_DIR, 'meta/class_names4.txt'))]
 g_class2label = {cls: i for i, cls in enumerate(g_classes)}
+# g_class2color = {'vegetation': [0, 255, 0],
+#                  'ground': [0, 0, 255],
+#                  'building': [0, 255, 255],
+#                  'pole': [120, 200, 255],
+#                  'network': [130, 210, 40],
+#                  'noise': [0, 0, 0]}
 g_class2color = {'vegetation': [0, 255, 0],
                  'ground': [0, 0, 255],
                  'building': [0, 255, 255],
-                 'pole': [120, 200, 255],
-                 'network': [130, 210, 40],
+                 'wire': [130, 210, 40],
                  'noise': [0, 0, 0]}
+# g_class2color = {'other': [0, 0, 0],
+#                  'pole': [120, 200, 255],
+#                  'wire': [130, 210, 40]}
 g_easy_view_labels = [7, 8, 9, 10, 11, 1]  # todo:
 g_label2color = {g_classes.index(cls): g_class2color[cls] for cls in g_classes}
 

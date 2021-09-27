@@ -1,6 +1,5 @@
 import os
 import glob
-from h5py._hl.files import make_fapl
 import numpy as np
 import json
 import h5py
@@ -10,16 +9,34 @@ import argparse
 import pointcloud_util as utils
 
 # map classes in the dataset to classes for the DGCNN classifier
+# CLASS_MAP = {
+#     2: 1,
+#     3: 2,
+#     4: 2,
+#     5: 2,
+#     6: 0
+# }
+
+# CLASS_MAP = {
+#     2: 2,
+#     3: 2,
+#     4: 2,
+#     5: 2,
+#     6: 2,
+#     14: 0,
+#     22: 1
+# }
+
 CLASS_MAP = {
     2: 1,
-    3: 4,
-    4: 4,
+    3: 3,
+    4: 3,
+    5: 3,
     6: 0,
-    14: 2,
-    22: 3
+    14: 2
 }
 
-CLASSES = [0, 1, 2, 3, 4]
+CLASSES = [0, 1, 2, 3]
 
 def load_h5_pointcloud(filename):
     """Load a pointcloud in HDF5 format from `filename`"""
@@ -49,7 +66,7 @@ def load_pointcloud(filename):
     else:
         raise Exception('Unsupported file type!')
 
-def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes = CLASSES, min_num = 100, las_dir = "../Datasets/converted-pcs"):
+def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes = CLASSES, class_map = CLASS_MAP, min_num = 100, las_dir = "../Datasets/converted-pcs"):
     """Load a set of pointclouds from a directory and save them in a txt file
 
     Args:
@@ -78,7 +95,7 @@ def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes =
         num_good = 0
         with tqdm(range(data.shape[0]), desc = "Saving Data") as t:
             for i in range(data.shape[0]):
-                this_data, this_labels = convert_pc_labels(data[i], labels[i])
+                this_data, this_labels = convert_pc_labels(data[i], labels[i], class_map = class_map)
                 las = laspy.create(file_version = "1.2", point_format = 3) 
 
                 las.x = this_data[:, 0]
@@ -100,7 +117,7 @@ def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes =
     label_batches = np.concatenate(label_batch_list, 0)
     return data_batches, label_batches
 
-def convert_pc_labels(data, labels):
+def convert_pc_labels(data, labels, class_map = CLASS_MAP):
     """Convert labels in a pointcloud to a format compatible with DGCNN
 
     Args:
@@ -111,7 +128,7 @@ def convert_pc_labels(data, labels):
         data: All valid entries of batch data
         labels: Remapped labels of batched data 
     """
-    valid_idxs = [i for i in range(len(labels)) if labels[i] in CLASS_MAP.keys()]
+    valid_idxs = [i for i in range(len(labels)) if labels[i] in class_map.keys()]
     data = data[valid_idxs, :]
     labels = labels[valid_idxs]
 
@@ -156,9 +173,6 @@ def extract_annotations(area, data_folder, output_path, categories, features, fe
         # load data
         room_data = np.loadtxt(room_file)
         output_label = room_data[:, -1]
-        # merge bridges into ground
-        bridge_idx = np.where(output_label == 26.0)[0]
-        output_label[bridge_idx] = 2.0
         output_data = np.zeros((room_data.shape[0], len(features_output)))
         test = np.unique(output_label)
         # select the output features
@@ -230,7 +244,7 @@ def write_npy_file_names(root_dir, data_path):
         np.savetxt(f, files, fmt='%s')
     f.close()
 
-def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_folder, npy_data_folder, area, categories_file, features_file, features_output, block_size, sample_num):
+def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_folder, npy_data_folder, area, categories_file, features_file, features_output, block_size, sample_num, min_class_num, class_map):
     """Pre-process raw data for the classifier
 
     Args:
@@ -251,14 +265,14 @@ def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_f
     with open(features_file, 'r') as f:
         features = json.load(f)
 
-    if not os.path.isdir(base_dir):
-        os.mkdir(base_dir)
+    # if not os.path.isdir(base_dir):
+    #     os.mkdir(base_dir)
 
-    if os.path.isdir(data_folder):
-        os.rmdir(data_folder)
-        os.mkdir(data_folder)
-    else:
-        os.mkdir(data_folder)
+    # if os.path.isdir(data_folder):
+    #     os.rmdir(data_folder)
+    #     os.mkdir(data_folder)
+    # else:
+    #     os.mkdir(data_folder)
 
     categories = {float(c): categories[c] for c in categories.keys()}
 
@@ -269,12 +283,12 @@ def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_f
     print("Processed: ", processed_data_folder)
     print("NPY: ", npy_data_folder)
 
-    print("Loading pointcloud data")
-    load_pointcloud_dir(pc_folder, data_folder, block_size = block_size, sample_num = sample_num, min_num = args.min_class_num)
-    print("Extracting annotations...")
-    extract_annotations(area, data_folder, processed_data_folder, categories, features, features_output)
-    print("Writing annotation paths...")
-    write_anno_paths(base_dir, root_folder)
+    # print("Loading pointcloud data")
+    # load_pointcloud_dir(pc_folder, data_folder, block_size = block_size, sample_num = sample_num, min_num = min_class_num, class_map = class_map)
+    # print("Extracting annotations...")
+    # extract_annotations(area, data_folder, processed_data_folder, categories, features, features_output)
+    # print("Writing annotation paths...")
+    # write_anno_paths(base_dir, root_folder)
     print("collecting NPY data...")
     collect_3d_data(root_folder, npy_data_folder)
     print("Writitng NPY data...")
@@ -293,7 +307,7 @@ if __name__ == "__main__":
     parser.add_argument('--pc_folder', type = str, default = PC_DIR)
     parser.add_argument('--data_folder', type = str, default = os.path.join(BASE_DIR, AREA, "Data"), help = 'Folder containing the complete datasets')
     parser.add_argument('--processed_data_folder', type = str, default = os.path.join(BASE_DIR, AREA, "processed"), help = 'Folder containing the complete datasets')
-    parser.add_argument('--categories_file', type = str, default = 'params/categories-new.json', help = 'JSON file containing label mappings')
+    parser.add_argument('--categories_file', type = str, default = 'params/categories.json', help = 'JSON file containing label mappings')
     parser.add_argument('--features_file', type = str, default = 'params/features.json', help = 'JSON file containing index mappings of LiDAR features')
     parser.add_argument('--features_output', nargs = '*', type = str, default = ['X', 'Y', 'Z'], help = 'LiDAR features to extract')
     parser.add_argument('--npy_data_folder', type = str, default = os.path.join(BASE_DIR, 'data_as_S3DIS_NRI_NPY'), help = 'Output folder of the data summary')
@@ -303,4 +317,4 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    process_data(args.base_dir, args.root_dir, args.pc_folder, args.data_folder, args.processed_data_folder, args.npy_data_folder, args.area, args.categories_file, args.features_file, args.features_output, args.block_size, args.sample_num)
+    process_data(args.base_dir, args.root_dir, args.pc_folder, args.data_folder, args.processed_data_folder, args.npy_data_folder, args.area, args.categories_file, args.features_file, args.features_output, args.block_size, args.sample_num, args.min_class_num, CLASS_MAP)

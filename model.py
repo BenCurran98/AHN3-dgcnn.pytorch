@@ -157,7 +157,7 @@ class DGCNN(nn.Module):
         if depth == 9:
                 return x
         x = self.dp1(x)
-        x = self.conv9(x)                       # (batch_size, 256, num_points) -> (batch_size, 13, num_points)
+        x = self.conv9(x)                       # (batch_size, 256, num_points) -> (batch_size, num_classes, num_points)
         
         return x
 

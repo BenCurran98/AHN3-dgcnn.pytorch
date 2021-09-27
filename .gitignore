@@ -9,3 +9,4 @@ tensorboard_logs/*
 *.sbatch
 log_tensorboard
 *.txt
+*.las
