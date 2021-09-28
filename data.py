@@ -219,9 +219,9 @@ class FugroDataset(Dataset):
         selected_labels = labels[selected_point_idxs]
 
         # generate a binary training mask for the points (which will be ignored in testing)
-        mask = self.create_train_mask(idx, N_points)
+        # mask = self.create_train_mask(idx, N_points)
         
-        return selected_points, selected_labels, mask
+        return selected_points, selected_labels, idx#, mask
 
     def __len__(self):
         return len(self.room_idxs)
@@ -242,7 +242,7 @@ class FugroDataset_eval(Dataset):
 
         room_idxs = []
         # for index in tqdm(range(len(rooms_split)), "Sampling Tiles"):
-        for index in tqdm(range(2), "Samplng Tiles"):
+        for index in tqdm(range(30), "Samplng Tiles"):
             room_name = rooms_split[index]
             room_path = os.path.join(data_root, room_name)
             room_path = os.path.join(data_root, room_name)

@@ -74,14 +74,16 @@ def train(k, io,
     torch.set_num_threads(num_threads)
     torch.set_num_interop_threads(num_interop_threads)
 
+    train_data = FugroDataset(split='train', data_root=data_dir, num_point=num_points,
+                     block_size=block_size, use_all_points = use_all_points, test_prop = test_prop, sample_num = sample_num, class_min = min_class_num, classes = range(num_classes))
     train_loader = DataLoader(
-        FugroDataset(split='train', data_root=data_dir, num_point=num_points,
-                     block_size=block_size, use_all_points = use_all_points, test_prop = test_prop, sample_num = sample_num, class_min = min_class_num, classes = range(num_classes)), num_workers=8, batch_size=train_batch_size,
+        train_data, num_workers=8, batch_size=train_batch_size,
         shuffle=True, drop_last=True)
 
+    test_data = FugroDataset(split='test', data_root=data_dir, num_point=num_points,
+                     block_size=block_size, test_prop = test_prop, classes = range(num_classes))
     test_loader = DataLoader(
-        FugroDataset(split='test', data_root=data_dir, num_point=num_points,
-                     block_size=block_size, test_prop = test_prop, classes = range(num_classes)), num_workers=8, batch_size=test_batch_size,
+        test_data, num_workers=8, batch_size=test_batch_size,
         shuffle=True, drop_last=True)
 
     device = torch.device("cuda" if cuda else "cpu")
@@ -147,7 +149,8 @@ def train(k, io,
         train_pred_seg = []
 
         with tqdm(train_loader, desc = "Training epoch {}".format(epoch)) as t:
-            for data, seg, mask in train_loader:
+            for data, seg, idx in train_loader:
+                mask = torch.tensor(train_data.create_train_mask(idx, data.shape[0]))
                 data, seg, mask = data.to(device), seg.to(device), mask.to(device)
                 data = data.permute(0, 2, 1).float()
                 batch_size = data.size()[0]
@@ -262,7 +265,7 @@ def train(k, io,
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
         test_true_seg = np.concatenate(test_true_seg, axis=0)
         test_pred_seg = np.concatenate(test_pred_seg, axis=0)
-        outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (epoch,
+        outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f' % (epoch,
                                                                                               test_loss * 1.0 / count,
                                                                                               test_acc,
                                                                                               avg_per_class_acc)
