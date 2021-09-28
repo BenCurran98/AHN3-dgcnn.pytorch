@@ -1,5 +1,4 @@
 import os
-from posixpath import dirname
 import sys
 import tempfile
 from shutil import rmtree, move
@@ -138,7 +137,7 @@ def build_dtm(pc, module_path = "/home/ben/external/RoamesDtmGenerator/bin",
 
     return [points[i, :] for i in range(points.shape[0]) if not is_nan_array[i]]
 
-def genAGL(dtm, pc):
+def gen_agl(dtm, pc):
     """Generate the agl for a pointcloud given a DTM
 
     Args:

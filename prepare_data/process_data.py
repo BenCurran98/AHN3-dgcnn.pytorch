@@ -1,12 +1,15 @@
 import os
 import glob
+from re import L
 import numpy as np
 import json
 import h5py
+from numpy.core.shape_base import hstack
 import laspy
 from tqdm import tqdm
 import argparse
 import pointcloud_util as utils
+from dtm import build_dtm, gen_agl
 
 # map classes in the dataset to classes for the DGCNN classifier
 # CLASS_MAP = {
@@ -27,16 +30,26 @@ import pointcloud_util as utils
 #     22: 1
 # }
 
+# CLASS_MAP = {
+#     2: 1,
+#     3: 3,
+#     4: 3,
+#     5: 3,
+#     6: 0,
+#     14: 2
+# }
+
 CLASS_MAP = {
-    2: 1,
-    3: 3,
-    4: 3,
-    5: 3,
-    6: 0,
-    14: 2
+    2:1,
+    3:1,
+    4:1,
+    5:3,
+    6:0,
 }
 
-CLASSES = [0, 1, 2, 3]
+CLASSES = [0, 1]
+
+# CLASSES = [0, 1, 2, 3]
 
 def load_h5_pointcloud(filename):
     """Load a pointcloud in HDF5 format from `filename`"""
@@ -66,7 +79,22 @@ def load_pointcloud(filename):
     else:
         raise Exception('Unsupported file type!')
 
-def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes = CLASSES, class_map = CLASS_MAP, min_num = 100, las_dir = "../Datasets/converted-pcs"):
+def load_pointcloud_dir(dir, outdir, 
+                        block_size = 100, 
+                        sample_num = 5, 
+                        classes = CLASSES, 
+                        class_map = CLASS_MAP, 
+                        min_num = 100, 
+                        las_dir = "converted-pcs",
+                        calc_agl = True,
+                        cell_size = 1, 
+                        desired_seed_cell_size = 90, 
+                        boundary_block_width = 5, 
+                        detect_water = False, 
+                        remove_buildings = True, 
+                        output_tin_file_path = None,
+                        dtm_buffer = 6,
+                        dtm_module_path = "/home/ben/external/RoamesDtmGenerator/bin"):
     """Load a set of pointclouds from a directory and save them in a txt file
 
     Args:
@@ -90,22 +118,51 @@ def load_pointcloud_dir(dir, outdir, block_size = 100, sample_num = 5, classes =
         f = acceptable_files[i]
         whole_data, whole_labels = load_pointcloud(os.path.join(dir, f))
 
-        data, labels = utils.room2blocks(whole_data, whole_labels, 10000, block_size = block_size, random_sample = False, stride = block_size/2, sample_num = sample_num, use_all_points = True)
+        data, labels = utils.room2blocks(whole_data, 
+                                            whole_labels, 
+                                            10000, 
+                                            block_size = block_size, 
+                                            random_sample = False, 
+                                            stride = block_size/2, 
+                                            sample_num = sample_num, 
+                                            use_all_points = True)
 
         num_good = 0
         with tqdm(range(data.shape[0]), desc = "Saving Data") as t:
             for i in range(data.shape[0]):
-                this_data, this_labels = convert_pc_labels(data[i], labels[i], class_map = class_map)
+                this_data, this_labels = convert_pc_labels(data[i], 
+                                                        labels[i], 
+                                                        class_map = class_map)
+
+                if calc_agl:
+                    dtm = build_dtm(this_data, 
+                                    module_path = dtm_module_path,
+                                    cell_size = cell_size,
+                                    desired_seed_cell_size = desired_seed_cell_size,
+                                    boundary_block_width = boundary_block_width,
+                                    detect_water = detect_water,
+                                    remove_buildings = remove_buildings,
+                                    output_tin_file_path = output_tin_file_path,
+                                    dtm_buffer = dtm_buffer)
+
+                    agl = gen_agl(dtm, this_data)
+
+                    this_data = np.hstack((this_data, np.reshape(agl, (agl.shape[0], 1))))
+
                 las = laspy.create(file_version = "1.2", point_format = 3) 
 
                 las.x = this_data[:, 0]
                 las.y = this_data[:, 1]
-                las.z = this_data[:, 2]
+                las.z = this_data[:, 2 if not calc_agl else 3]
                 las.classification = this_labels
                 las.write(os.path.join(las_dir, "Area_{}.las".format(tile_num)))
                 class_counts = [len(np.where(this_labels == c)[0]) for c in classes]
                 if all([count > min_num for count in class_counts]):
-                    np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(tile_num)), np.hstack((this_data, np.reshape(this_labels, (len(this_labels), 1)))))
+                    np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(
+                                            tile_num)), np.hstack((this_data, 
+                                            np.reshape(this_labels, 
+                                                    (len(this_labels), 1)))))
+                    
                     data_batch_list.append(this_data)
                     label_batch_list.append(this_labels)
                     tile_num += 1
@@ -244,7 +301,13 @@ def write_npy_file_names(root_dir, data_path):
         np.savetxt(f, files, fmt='%s')
     f.close()
 
-def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_folder, npy_data_folder, area, categories_file, features_file, features_output, block_size, sample_num, min_class_num, class_map):
+def process_data(base_dir, root_folder, pc_folder, data_folder, 
+                processed_data_folder, npy_data_folder, area, categories_file, 
+                features_file, features_output, block_size, sample_num, 
+                min_class_num, class_map, calc_agl, cell_size, 
+                desired_seed_cell_size, boundary_block_width, detect_water,
+                remove_buildings, output_tin_file_path, dtm_buffer,
+                dtm_module_path):
     """Pre-process raw data for the classifier
 
     Args:
@@ -265,14 +328,14 @@ def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_f
     with open(features_file, 'r') as f:
         features = json.load(f)
 
-    # if not os.path.isdir(base_dir):
-    #     os.mkdir(base_dir)
+    if not os.path.isdir(base_dir):
+        os.mkdir(base_dir)
 
-    # if os.path.isdir(data_folder):
-    #     os.rmdir(data_folder)
-    #     os.mkdir(data_folder)
-    # else:
-    #     os.mkdir(data_folder)
+    if os.path.isdir(data_folder):
+        os.rmdir(data_folder)
+        os.mkdir(data_folder)
+    else:
+        os.mkdir(data_folder)
 
     categories = {float(c): categories[c] for c in categories.keys()}
 
@@ -283,12 +346,26 @@ def process_data(base_dir, root_folder, pc_folder, data_folder, processed_data_f
     print("Processed: ", processed_data_folder)
     print("NPY: ", npy_data_folder)
 
-    # print("Loading pointcloud data")
-    # load_pointcloud_dir(pc_folder, data_folder, block_size = block_size, sample_num = sample_num, min_num = min_class_num, class_map = class_map)
-    # print("Extracting annotations...")
-    # extract_annotations(area, data_folder, processed_data_folder, categories, features, features_output)
-    # print("Writing annotation paths...")
-    # write_anno_paths(base_dir, root_folder)
+    print("Loading pointcloud data")
+    load_pointcloud_dir(pc_folder, data_folder, 
+                            block_size = block_size, 
+                            sample_num = sample_num, 
+                            min_num = min_class_num, 
+                            class_map = class_map,
+                            calc_agl = calc_agl, 
+                            cell_size = cell_size, 
+                            desired_seed_cell_size = desired_seed_cell_size, 
+                            boundary_block_width = boundary_block_width, 
+                            detect_water = detect_water,
+                            remove_buildings = remove_buildings, 
+                            output_tin_file_path = output_tin_file_path, 
+                            dtm_buffer = dtm_buffer,
+                            dtm_module_path = dtm_module_path)
+    print("Extracting annotations...")
+    extract_annotations(area, data_folder, processed_data_folder, categories, 
+                        features, features_output)
+    print("Writing annotation paths...")
+    write_anno_paths(base_dir, root_folder)
     print("collecting NPY data...")
     collect_3d_data(root_folder, npy_data_folder)
     print("Writitng NPY data...")
@@ -309,12 +386,29 @@ if __name__ == "__main__":
     parser.add_argument('--processed_data_folder', type = str, default = os.path.join(BASE_DIR, AREA, "processed"), help = 'Folder containing the complete datasets')
     parser.add_argument('--categories_file', type = str, default = 'params/categories.json', help = 'JSON file containing label mappings')
     parser.add_argument('--features_file', type = str, default = 'params/features.json', help = 'JSON file containing index mappings of LiDAR features')
-    parser.add_argument('--features_output', nargs = '*', type = str, default = ['X', 'Y', 'Z'], help = 'LiDAR features to extract')
+    parser.add_argument('--features_output', nargs = '*', type = str, default = ['X', 'Y', 'Z', 'AGL'], help = 'LiDAR features to extract')
     parser.add_argument('--npy_data_folder', type = str, default = os.path.join(BASE_DIR, 'data_as_S3DIS_NRI_NPY'), help = 'Output folder of the data summary')
     parser.add_argument('--block_size', type = int, default = 100, help = 'Size of blocks to divide pointclouds into')
     parser.add_argument('--sample_num', type = int, default = 5, help = 'Number of tile samples to take from each point cloud')
     parser.add_argument('--min_class_num', type = int, default = 100, help = 'Minimum number of points per class for the pointcloud to be used')
+    parser.add_argument('--calc_agl', type = bool, default = True, help = 'Whether to calculate AGL for the pointcloud')
+    parser.add_argument('--cell_size', type = int, default = 1, help = 'Size of DTM cell')
+    parser.add_argument('--desired_seed_cell_size', type = int, default = 90, help = 'Size of DTM seed cell')
+    parser.add_argument('--boundary_block_width', type = int, default = 5, help = 'Number of blocks to use on the boundary')
+    parser.add_argument('--detect_water', type = bool, default = False, help = 'Whether to detect water in DTM generation')
+    parser.add_argument('--remove_buildings', type = bool, default = True, help = 'Whether to remove buildings in DTM generation')
+    parser.add_argument('--output_tin_file_path', type = any, default = None, help = 'File path of the DTM tin file to produce')
+    parser.add_argument('--dtm_buffer', type = float, default = 6, help = 'Buffer (metres) around the DTM region to use')
+    parser.add_argument('--dtm_module_path', type = str, default = "/home/ben/external/RoamesDtmGenerator/bin", help = 'Path to the RoamesDTMGenerator module')
+    
     
     args = parser.parse_args()
     
-    process_data(args.base_dir, args.root_dir, args.pc_folder, args.data_folder, args.processed_data_folder, args.npy_data_folder, args.area, args.categories_file, args.features_file, args.features_output, args.block_size, args.sample_num, args.min_class_num, CLASS_MAP)
+    process_data(args.base_dir, args.root_dir, args.pc_folder, args.data_folder, 
+                args.processed_data_folder, args.npy_data_folder, args.area, 
+                args.categories_file, args.features_file, args.features_output, 
+                args.block_size, args.sample_num, args.min_class_num, CLASS_MAP,
+                args.calc_agl, args.cell_size, args.desired_seed_cell_size,
+                args.boundary_block_width, args.detect_water,
+                args.remove_buildings, args.output_tin_file_path, 
+                args.dtm_buffer, args.dtm_module_path)
