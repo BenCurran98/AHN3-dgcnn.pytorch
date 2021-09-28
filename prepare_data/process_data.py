@@ -1,6 +1,5 @@
 import os
 import glob
-from re import L
 import numpy as np
 import json
 import h5py
@@ -11,45 +10,8 @@ import argparse
 import pointcloud_util as utils
 from dtm import build_dtm, gen_agl
 
-# map classes in the dataset to classes for the DGCNN classifier
-# CLASS_MAP = {
-#     2: 1,
-#     3: 2,
-#     4: 2,
-#     5: 2,
-#     6: 0
-# }
-
-# CLASS_MAP = {
-#     2: 2,
-#     3: 2,
-#     4: 2,
-#     5: 2,
-#     6: 2,
-#     14: 0,
-#     22: 1
-# }
-
-# CLASS_MAP = {
-#     2: 1,
-#     3: 3,
-#     4: 3,
-#     5: 3,
-#     6: 0,
-#     14: 2
-# }
-
-CLASS_MAP = {
-    2:1,
-    3:1,
-    4:1,
-    5:3,
-    6:0,
-}
-
-CLASSES = [0, 1]
-
-# CLASSES = [0, 1, 2, 3]
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+CLASS_MAP_FILE = os.path.join(ROOT_DIR, "params", "class_map.json")
 
 def load_h5_pointcloud(filename):
     """Load a pointcloud in HDF5 format from `filename`"""
@@ -83,7 +45,7 @@ def load_pointcloud_dir(dir, outdir,
                         block_size = 100, 
                         sample_num = 5, 
                         classes = CLASSES, 
-                        class_map = CLASS_MAP, 
+                        class_map_file = CLASS_MAP_FILE, 
                         min_num = 100, 
                         las_dir = "converted-pcs",
                         calc_agl = True,
@@ -105,6 +67,11 @@ def load_pointcloud_dir(dir, outdir,
         data_batches: List of point data from pointclouds
         label_batches: List of label data from pointclouds
     """
+    with open(class_map_file, "r") as f:
+        class_map = json.load(f)
+    class_map = {int(k): v for (k, v) in class_map.items()}
+    classes = [k for k in classes.keys()]
+
     data_batch_list, label_batch_list = [], []
     files = os.listdir(dir)
     acceptable_files = [f for f in files if f.split('.')[-1] in ['h5', 'las']]
@@ -236,7 +203,8 @@ def extract_annotations(area, data_folder, output_path, categories, features, fe
         for feature_id, feature in enumerate(features_output):
             output_data[:, feature_id] = room_data[:, features[feature]]
         with open(output_path + '/' + area + '_' + str(room_id) + '.txt', 'w+') as fout1:
-            np.savetxt(fout1, output_data, fmt="%.3f %.3f %.3f")
+            fmt = ["%.3f" for _ in range(output_data.shape[0])]
+            np.savetxt(fout1, output_data, fmt=fmt)
         fout1.close()
 
         # write file according to classes
@@ -249,7 +217,8 @@ def extract_annotations(area, data_folder, output_path, categories, features, fe
             # find corresponding classes
             category_indices = np.where(output_label == category)[0]
             with open(ANNO_PATH + '/' + categories[category] + '.txt', 'w+') as fout2:
-                np.savetxt(fout2, output_data[category_indices, :], fmt="%.3f %.3f %.3f")
+                fmt = ["%.3f" for _ in range(output_data.shape[0])]
+                np.savetxt(fout2, output_data[category_indices, :], fmt=fmt)
             fout2.close()
 
 def write_anno_paths(base_dir, root_dir):

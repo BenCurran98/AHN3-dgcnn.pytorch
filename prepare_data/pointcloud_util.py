@@ -3,41 +3,14 @@ import glob
 import os
 import sys
 from tqdm import tqdm
+import json
 
-BASE_DIR = 'D:/Documents/Datasets/'  # base directory of datasets
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(ROOT_DIR)
-
-# -----------------------------------------------------------------------------
-# CONSTANTS
-# -----------------------------------------------------------------------------
-
-DATA_PATH = os.path.join(BASE_DIR, 'AHN3_as_S3DIS_RGB')
-g_classes = [x.rstrip() for x in open(os.path.join(ROOT_DIR, 'meta/class_names4.txt'))]
-g_class2label = {cls: i for i, cls in enumerate(g_classes)}
-# g_class2color = {'vegetation': [0, 255, 0],
-#                  'ground': [0, 0, 255],
-#                  'building': [0, 255, 255],
-#                  'pole': [120, 200, 255],
-#                  'network': [130, 210, 40],
-#                  'noise': [0, 0, 0]}
-g_class2color = {'vegetation': [0, 255, 0],
-                 'ground': [0, 0, 255],
-                 'building': [0, 255, 255],
-                 'wire': [130, 210, 40],
-                 'noise': [0, 0, 0]}
-# g_class2color = {'other': [0, 0, 0],
-#                  'pole': [120, 200, 255],
-#                  'wire': [130, 210, 40]}
-g_easy_view_labels = [7, 8, 9, 10, 11, 1]  # todo:
-g_label2color = {g_classes.index(cls): g_class2color[cls] for cls in g_classes}
+CLASS_NAMES_FILE = os.path.join(ROOT_DIR, 'meta/class_names4.txt')
 
 
-# -----------------------------------------------------------------------------
-# CONVERT ORIGINAL DATA TO OUR DATA_LABEL FILES
-# -----------------------------------------------------------------------------
-
-def collect_point_label(anno_path, out_filename, file_format='txt'):
+def collect_point_label(anno_path, out_filename, file_format='txt', class_names_file = CLASS_NAMES_FILE):
     """ Convert original dataset files to data_label file (each line is XYZRGBL).
         We aggregated all the points from each instance in the room.
 
@@ -50,6 +23,10 @@ def collect_point_label(anno_path, out_filename, file_format='txt'):
     Note:
         the points are shifted before save, the most negative point is now at origin.
     """
+
+    g_classes = [x.rstrip() for x in open(class_names_file)]
+    g_class2label = {cls: i for i, cls in enumerate(g_classes)}
+
     points_list = []
 
     for f in glob.glob(os.path.join(anno_path, '*.txt')):
@@ -70,9 +47,9 @@ def collect_point_label(anno_path, out_filename, file_format='txt'):
     if file_format == 'txt':
         fout = open(out_filename, 'w+')
         for i in range(data_label.shape[0]):
-            fout.write('%f %f %f %d\n' % \
-                       (data_label[i, 0], data_label[i, 1], data_label[i, 2],
-                        data_label[i, 3]))
+            str_format = " ".join(["%f" for _ in range(data_label.shape[1] - 1)])
+            str_format += " %d\n"
+            fout.write(str_format % tuple([j for j in data_label[i, :]]))
         fout.close()
     elif file_format == 'numpy':
         np.save(out_filename, data_label)
