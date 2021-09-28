@@ -140,7 +140,7 @@ class FugroDataset(Dataset):
 
         print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
 
-    def create_train_mask(self, idx, tot_samples):
+    def create_train_mask(self, idx, tot_samples, exclude_classes = []):
         """Generate a binary mask to select training points to contribute to learning
 
         Args:
@@ -154,12 +154,14 @@ class FugroDataset(Dataset):
         label_counts = np.zeros(len(self.classes))
         for i in range(len(self.classes)):
             label_counts[i] = np.sum(labels == self.classes[i])
-        min_label_count = min([count for count in label_counts if count > 0])
+        min_label_count = min([label_counts[i] for i in range(len(label_counts)) if i not in exclude_classes])
         n_samples = int(min(min_label_count, np.floor(tot_samples/len(self.classes))))
         train_mask = np.zeros(labels.shape)
         for label in self.classes:
             this_label_idxs = np.where(labels == label)[0]
             if len(this_label_idxs) > 0:
+                if label in exclude_classes:
+                    continue
                 training_idxs = np.random.choice(this_label_idxs, n_samples, replace = False)
                 train_mask[training_idxs] = 1
         return train_mask

@@ -91,6 +91,8 @@ if __name__ == "__main__":
                         help = 'Number of threads to use for training')
     parser.add_argument('--num_interop_threads', type=int, default = 2, metavar = 'N',
                         help = 'Number of threads to use for inter-operations in pytorch')
+    parser.add_argument('--exclude_classes', nargs = "*", type=int, default = -1, metavar = 'N',
+                        help = 'Class labels to ignore in training')
     parser.add_argument('--min_class_num', type = int, default = 100, 
                         help = 'Minimum number of points per class for the pointcloud to be used')
     parser.add_argument('--model_label', type = str, default = "dgcnn_model", 

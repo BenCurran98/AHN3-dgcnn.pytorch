@@ -37,6 +37,7 @@ def train(k, io,
             model_label = "dgcnn_model",
             num_threads = 8,
             num_interop_threads = 2,
+            exclude_classes = [],
             model_root = "checkpoints/dgcnn",
             exp_name = "DGCNN_Training",
             tb_dir = "tensorboard_logs"):
@@ -150,7 +151,7 @@ def train(k, io,
 
         with tqdm(train_loader, desc = "Training epoch {}".format(epoch)) as t:
             for data, seg, idx in train_loader:
-                mask = torch.tensor(train_data.create_train_mask(idx, data.shape[0]))
+                mask = torch.tensor(train_data.create_train_mask(idx, data.shape[0], exclude_classes = exclude_classes))
                 data, seg, mask = data.to(device), seg.to(device), mask.to(device)
                 data = data.permute(0, 2, 1).float()
                 batch_size = data.size()[0]
@@ -295,6 +296,7 @@ def train(k, io,
     writer_test_balanced_accuracy.close()
 
 def train_args(args, io):
+    exclude_classes = [i for i in args.exclude_classes if i >= 0]
     train(
         args.k,
         io,
@@ -318,6 +320,7 @@ def train_args(args, io):
         cuda = args.cuda,
         model_label = args.model_label, 
         num_threads = args.num_threads, 
+        exclude_classes = exclude_classes,
         num_interop_threads = args.num_interop_threads,
         model_root = args.model_root,
         exp_name = args.exp_name
