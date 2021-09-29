@@ -48,7 +48,8 @@ def build_dtm(pc, module_path = "/home/ben/external/RoamesDtmGenerator/bin",
 
     dump_tin_ply = output_tin_file_path != None
 
-    temp_dir = tempfile.mkdtemp()
+    # temp_dir = tempfile.mkdtemp()
+    temp_dir = "/media/ben/T7 Touch/InnovationConference/test"
 
     min_x = np.amin(pc[:, 0])
     min_y = np.amin(pc[:, 1])
@@ -92,10 +93,6 @@ def build_dtm(pc, module_path = "/home/ben/external/RoamesDtmGenerator/bin",
         with open(stdout_file, "wb") as f:
             f.write(output)
 
-    print("Done with DTM Generation!")
-
-    print(os.listdir(output_path))
-
     if is_dry_run:
         return None
     new_dtm_file = os.path.join(output_path, 
@@ -105,8 +102,6 @@ def build_dtm(pc, module_path = "/home/ben/external/RoamesDtmGenerator/bin",
     if not os.path.isfile(new_dtm_file):
         warnings.warn("DTM Binary file notfound: {}".format(new_dtm_file))
         return pc - np.mean(pc)
-
-    print("Reading DTM File...")
 
     with open(new_dtm_file, "rb") as f:
         dtm_heights = np.fromfile(f, np.dtype('B'))

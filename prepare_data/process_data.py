@@ -44,7 +44,6 @@ def load_pointcloud(filename):
 def load_pointcloud_dir(dir, outdir, 
                         block_size = 100, 
                         sample_num = 5, 
-                        classes = CLASSES, 
                         class_map_file = CLASS_MAP_FILE, 
                         min_num = 100, 
                         las_dir = "converted-pcs",
@@ -70,7 +69,7 @@ def load_pointcloud_dir(dir, outdir,
     with open(class_map_file, "r") as f:
         class_map = json.load(f)
     class_map = {int(k): v for (k, v) in class_map.items()}
-    classes = [k for k in classes.keys()]
+    classes = [k for k in class_map.keys()]
 
     data_batch_list, label_batch_list = [], []
     files = os.listdir(dir)
@@ -99,7 +98,7 @@ def load_pointcloud_dir(dir, outdir,
             for i in range(data.shape[0]):
                 this_data, this_labels = convert_pc_labels(data[i], 
                                                         labels[i], 
-                                                        class_map = class_map)
+                                                        class_map_file = class_map_file)
 
                 if calc_agl:
                     dtm = build_dtm(this_data, 
@@ -141,7 +140,7 @@ def load_pointcloud_dir(dir, outdir,
     label_batches = np.concatenate(label_batch_list, 0)
     return data_batches, label_batches
 
-def convert_pc_labels(data, labels, class_map = CLASS_MAP):
+def convert_pc_labels(data, labels, class_map_file = CLASS_MAP_FILE):
     """Convert labels in a pointcloud to a format compatible with DGCNN
 
     Args:
@@ -152,13 +151,18 @@ def convert_pc_labels(data, labels, class_map = CLASS_MAP):
         data: All valid entries of batch data
         labels: Remapped labels of batched data 
     """
+    with open(class_map_file, "r") as f:
+        class_map = json.load(f)
+
+    class_map = {int(k): v for (k, v) in class_map.items()}
+
     valid_idxs = [i for i in range(len(labels)) if labels[i] in class_map.keys()]
     data = data[valid_idxs, :]
     labels = labels[valid_idxs]
 
     m = 1
-    for c in CLASS_MAP.keys():
-        labels[np.where(labels == c)] = CLASS_MAP[c]
+    for c in class_map.keys():
+        labels[np.where(labels == c)] = class_map[c]
         m += 1
 
     return data, labels
@@ -273,7 +277,7 @@ def write_npy_file_names(root_dir, data_path):
 def process_data(base_dir, root_folder, pc_folder, data_folder, 
                 processed_data_folder, npy_data_folder, area, categories_file, 
                 features_file, features_output, block_size, sample_num, 
-                min_class_num, class_map, calc_agl, cell_size, 
+                min_class_num, class_map_file, calc_agl, cell_size, 
                 desired_seed_cell_size, boundary_block_width, detect_water,
                 remove_buildings, output_tin_file_path, dtm_buffer,
                 dtm_module_path):
@@ -320,7 +324,7 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
                             block_size = block_size, 
                             sample_num = sample_num, 
                             min_num = min_class_num, 
-                            class_map = class_map,
+                            class_map_file = class_map_file,
                             calc_agl = calc_agl, 
                             cell_size = cell_size, 
                             desired_seed_cell_size = desired_seed_cell_size, 
@@ -355,6 +359,7 @@ if __name__ == "__main__":
     parser.add_argument('--processed_data_folder', type = str, default = os.path.join(BASE_DIR, AREA, "processed"), help = 'Folder containing the complete datasets')
     parser.add_argument('--categories_file', type = str, default = 'params/categories.json', help = 'JSON file containing label mappings')
     parser.add_argument('--features_file', type = str, default = 'params/features.json', help = 'JSON file containing index mappings of LiDAR features')
+    parser.add_argument('--class_map_file', type = str, default = CLASS_MAP_FILE, help = 'File containing class mappings')
     parser.add_argument('--features_output', nargs = '*', type = str, default = ['X', 'Y', 'Z', 'AGL'], help = 'LiDAR features to extract')
     parser.add_argument('--npy_data_folder', type = str, default = os.path.join(BASE_DIR, 'data_as_S3DIS_NRI_NPY'), help = 'Output folder of the data summary')
     parser.add_argument('--block_size', type = int, default = 100, help = 'Size of blocks to divide pointclouds into')
@@ -376,7 +381,7 @@ if __name__ == "__main__":
     process_data(args.base_dir, args.root_dir, args.pc_folder, args.data_folder, 
                 args.processed_data_folder, args.npy_data_folder, args.area, 
                 args.categories_file, args.features_file, args.features_output, 
-                args.block_size, args.sample_num, args.min_class_num, CLASS_MAP,
+                args.block_size, args.sample_num, args.min_class_num, args.class_map_file,
                 args.calc_agl, args.cell_size, args.desired_seed_cell_size,
                 args.boundary_block_width, args.detect_water,
                 args.remove_buildings, args.output_tin_file_path, 
