@@ -48,8 +48,7 @@ def build_dtm(pc, module_path = "/home/ben/external/RoamesDtmGenerator/bin",
 
     dump_tin_ply = output_tin_file_path != None
 
-    # temp_dir = tempfile.mkdtemp()
-    temp_dir = "/media/ben/T7 Touch/InnovationConference/test"
+    temp_dir = tempfile.mkdtemp()
 
     min_x = np.amin(pc[:, 0])
     min_y = np.amin(pc[:, 1])

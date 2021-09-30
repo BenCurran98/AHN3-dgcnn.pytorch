@@ -78,7 +78,7 @@ class FugroDataset(Dataset):
                 room_name = rooms_split[index]
                 room_path = os.path.join(data_root, room_name)
                 room_data = np.load(room_path)
-                points, labels = room_data[:, 0:3], room_data[:, 3]
+                points, labels = room_data[:, 0:-1], room_data[:, -1]
                 coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
                 self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
 
@@ -89,8 +89,10 @@ class FugroDataset(Dataset):
                 las.z = points[:, 2]
 
                 las.classification = labels
-
-                label_counts = [len(np.where(labels == c)) for c in np.unique(labels)]
+                
+                unique_labels = np.unique(labels)
+                
+                label_counts = [len(np.where(labels == c)[0]) for c in unique_labels]
 
                 las.write("../DataSampleTrain/{}_block_data{}.las".format(split, index))
 
@@ -114,15 +116,17 @@ class FugroDataset(Dataset):
 
                         if n > n_tries:
                             break
-                    las = laspy.create(file_version = "1.2", point_format = 3) 
+                    
+                    if len(self.room_points) > 0:
+                        las = laspy.create(file_version = "1.2", point_format = 3) 
 
-                    las.x = self.room_points[-1][0, :, 0]
-                    las.y = self.room_points[-1][0, :, 1]
-                    las.z = self.room_points[-1][0, :, 2]
+                        las.x = self.room_points[-1][0, :, 0]
+                        las.y = self.room_points[-1][0, :, 1]
+                        las.z = self.room_points[-1][0, :, 2]
 
-                    las.classification = self.room_labels[-1][0, :]
+                        las.classification = self.room_labels[-1][0, :]
 
-                    las.write("../DataSampleTrain/{}_subsampled__block_data{}.las".format(split, index))
+                        las.write("../DataSampleTrain/{}_subsampled__block_data{}.las".format(split, index))
 
                 else:
                     block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,

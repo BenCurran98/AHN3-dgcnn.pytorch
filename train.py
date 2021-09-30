@@ -21,6 +21,7 @@ def train(k, io,
             block_size = 30.0,
             epochs = 30,
             num_classes = 5,
+            num_features = 3,
             train_batch_size = 8,
             test_batch_size = 8,
             min_class_num = 100,
@@ -90,7 +91,7 @@ def train(k, io,
     device = torch.device("cuda" if cuda else "cpu")
     print("Using ", device)
 
-    model = DGCNN(num_classes, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
+    model = DGCNN(num_classes, num_features, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
 
     print(str(model))
     
@@ -296,7 +297,10 @@ def train(k, io,
     writer_test_balanced_accuracy.close()
 
 def train_args(args, io):
-    exclude_classes = [i for i in args.exclude_classes if i >= 0]
+    if type(args.exclude_classes) == list:
+        exclude_classes = [i for i in args.exclude_classes if i >= 0]
+    else:
+        exclude_classes = []
     train(
         args.k,
         io,
@@ -305,6 +309,7 @@ def train_args(args, io):
         block_size = args.block_size,
         epochs = args.epochs,
         num_classes = args.num_classes,
+        num_features = args.num_features,
         train_batch_size = args.batch_size,
         test_batch_size = args.test_batch_size,
         min_class_num = args.min_class_num,

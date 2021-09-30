@@ -68,11 +68,12 @@ def get_graph_feature(x, k=20, idx=None, dim9=False, use_cuda=True):
     return feature      # (batch_size, 2*num_dims, num_points, k)
 
 class DGCNN(nn.Module):
-    def __init__(self, num_classes, k, dropout = 0.5, emb_dims = 1024, cuda = False):
+    def __init__(self, num_classes, num_features, k, dropout = 0.5, emb_dims = 1024, cuda = False):
         super(DGCNN, self).__init__()
         self.k = k
         self.num_classes = num_classes
         self.use_cuda = cuda
+        self.num_features = num_features
         
         self.bn1 = nn.BatchNorm2d(64)
         self.bn2 = nn.BatchNorm2d(64)
@@ -83,7 +84,7 @@ class DGCNN(nn.Module):
         self.bn7 = nn.BatchNorm1d(512)
         self.bn8 = nn.BatchNorm1d(256)
 
-        self.conv1 = nn.Sequential(nn.Conv2d(6, 64, kernel_size=1, bias=False),
+        self.conv1 = nn.Sequential(nn.Conv2d(2 * num_features, 64, kernel_size=1, bias=False),
                                    self.bn1,
                                    nn.LeakyReLU(negative_slope=0.2))
         self.conv2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=1, bias=False),
@@ -114,8 +115,8 @@ class DGCNN(nn.Module):
     def forward(self, x, depth = 10):
         num_points = x.size(2)
 
-        x = get_graph_feature(x, k=self.k, dim9=True, use_cuda=self.use_cuda)   # (batch_size, 9, num_points) -> (batch_size, 9*2, num_points, k)
-        x = self.conv1(x)                       # (batch_size, 9*2, num_points, k) -> (batch_size, 64, num_points, k)
+        x = get_graph_feature(x, k=self.k, dim9=True, use_cuda=self.use_cuda)   # (batch_size, num_features, num_points) -> (batch_size, 2 * num_features, num_points, k)
+        x = self.conv1(x)                       # (batch_size, 2 * num_features, num_points, k) -> (batch_size, 64, num_points, k)
         x = self.conv2(x)                       # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points, k)
         x1 = x.max(dim=-1, keepdim=False)[0]    # (batch_size, 64, num_points, k) -> (batch_size, 64, num_points)
         if depth == 1:

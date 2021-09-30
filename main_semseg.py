@@ -46,6 +46,8 @@ if __name__ == "__main__":
                         help='size of one block')
     parser.add_argument('--num_classes', type=int, default=5,
                         help='number of classes in the dataset')
+    parser.add_argument('--num_features', type=int, default=3,
+                        help='Number of pointcloud feature columns in data')
     parser.add_argument('--test_area', type=str, default='4', metavar='N',
                         choices=['1', '2', '3', '4', 'all'])
     parser.add_argument('--batch_size', type=int, default=12, metavar='batch_size',

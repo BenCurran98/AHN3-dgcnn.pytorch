@@ -69,7 +69,7 @@ def load_pointcloud_dir(dir, outdir,
     with open(class_map_file, "r") as f:
         class_map = json.load(f)
     class_map = {int(k): v for (k, v) in class_map.items()}
-    classes = [k for k in class_map.keys()]
+    classes = [k for k in class_map.values()]
 
     data_batch_list, label_batch_list = [], []
     files = os.listdir(dir)
@@ -206,8 +206,8 @@ def extract_annotations(area, data_folder, output_path, categories, features, fe
         # select the output features
         for feature_id, feature in enumerate(features_output):
             output_data[:, feature_id] = room_data[:, features[feature]]
+        fmt = ["%.3f" for _ in range(output_data.shape[1])]
         with open(output_path + '/' + area + '_' + str(room_id) + '.txt', 'w+') as fout1:
-            fmt = ["%.3f" for _ in range(output_data.shape[0])]
             np.savetxt(fout1, output_data, fmt=fmt)
         fout1.close()
 
@@ -217,11 +217,12 @@ def extract_annotations(area, data_folder, output_path, categories, features, fe
             os.mkdir(ANNO_PATH)
 
         eff_categories = np.unique(output_label)
+        print(eff_categories)
         for category in eff_categories:
             # find corresponding classes
             category_indices = np.where(output_label == category)[0]
+            fmt = ["%.3f" for _ in range(output_data.shape[1])]
             with open(ANNO_PATH + '/' + categories[category] + '.txt', 'w+') as fout2:
-                fmt = ["%.3f" for _ in range(output_data.shape[0])]
                 np.savetxt(fout2, output_data[category_indices, :], fmt=fmt)
             fout2.close()
 
