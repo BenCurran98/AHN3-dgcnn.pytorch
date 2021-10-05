@@ -3,6 +3,7 @@ import glob
 import numpy as np
 import json
 import h5py
+import gc
 from numpy.core.shape_base import hstack
 import laspy
 from tqdm import tqdm
@@ -55,7 +56,7 @@ def load_pointcloud_dir(dir, outdir,
                         remove_buildings = True, 
                         output_tin_file_path = None,
                         dtm_buffer = 6,
-                        dtm_module_path = "/home/ben/external/RoamesDtmGenerator/bin"):
+                        dtm_module_path = "/media/ben//ExternalStorage/external/RoamesDtmGenerator/bin"):
     """Load a set of pointclouds from a directory and save them in a txt file
 
     Args:
@@ -135,6 +136,7 @@ def load_pointcloud_dir(dir, outdir,
                     num_good += 1
                     t.set_postfix(num_good = num_good)
                 t.update()
+                gc.collect()
     
     data_batches = np.concatenate(data_batch_list, 0)
     label_batches = np.concatenate(label_batch_list, 0)
@@ -374,7 +376,7 @@ if __name__ == "__main__":
     parser.add_argument('--remove_buildings', type = bool, default = True, help = 'Whether to remove buildings in DTM generation')
     parser.add_argument('--output_tin_file_path', type = any, default = None, help = 'File path of the DTM tin file to produce')
     parser.add_argument('--dtm_buffer', type = float, default = 6, help = 'Buffer (metres) around the DTM region to use')
-    parser.add_argument('--dtm_module_path', type = str, default = "/home/ben/external/RoamesDtmGenerator/bin", help = 'Path to the RoamesDTMGenerator module')
+    parser.add_argument('--dtm_module_path', type = str, default = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin", help = 'Path to the RoamesDTMGenerator module')
     
     
     args = parser.parse_args()

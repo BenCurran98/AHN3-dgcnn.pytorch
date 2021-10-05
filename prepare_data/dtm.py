@@ -49,7 +49,7 @@ def build_dtm(pc, module_path = "/home/ben/external/RoamesDtmGenerator/bin",
     dump_tin_ply = output_tin_file_path != None
 
     temp_dir = tempfile.mkdtemp()
-
+    
     min_x = np.amin(pc[:, 0])
     min_y = np.amin(pc[:, 1])
     max_x = np.amax(pc[:, 0])
@@ -103,7 +103,7 @@ def build_dtm(pc, module_path = "/home/ben/external/RoamesDtmGenerator/bin",
         return pc - np.mean(pc)
 
     with open(new_dtm_file, "rb") as f:
-        dtm_heights = np.fromfile(f, np.dtype('B'))
+        dtm_heights = np.fromfile(f, dtype = np.float32)
     
 
     points = np.zeros((dtm_edge_size * dtm_edge_size, 3))
@@ -149,7 +149,7 @@ def gen_agl(dtm, pc):
 
     k = min(4, dtm.shape[0])
     _, idxs = kdtree.query(pc[:, 0:2], k = k)
-    avg_dtm_height = [np.mean(dtm[i, 2]) for i in idxs]
+    avg_dtm_height = np.array([np.mean(dtm[idxs[i], 2]) for i in range(idxs.shape[0])])
     pc_agl = pc[:, 2] - avg_dtm_height
 
     return pc_agl

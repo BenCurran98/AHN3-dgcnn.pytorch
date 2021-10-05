@@ -253,7 +253,7 @@ class FugroDataset_eval(Dataset):
             room_path = os.path.join(data_root, room_name)
             room_path = os.path.join(data_root, room_name)
             room_data = np.load(room_path)
-            points, labels = room_data[:, 0:3], room_data[:, 3]
+            points, labels = room_data[:, 0:-1], room_data[:, -1]
             coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
             self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
             block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
