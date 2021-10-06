@@ -20,8 +20,9 @@ def load_h5_pointcloud(filename):
     # only really need position and classification - if we have agl, substitute for z
     position = file['LAS/Position']
     if 'AGL' in file.keys():
-        position[:, 2] = file['AGL']
-    
+        agl = file['AGL']
+        position = np.hstack((position, agl))
+
     labels = file['LAS/Classification']
 
     return position, labels
@@ -41,6 +42,18 @@ def load_pointcloud(filename):
         return load_las_pointcloud(filename)
     else:
         raise Exception('Unsupported file type!')
+
+def save_las_pointcloud(data, labels, filename):
+    """Save a pointcloud in LAS format into `filename`
+    """
+    las = laspy.create(file_version = "1.2", point_format = 3) 
+
+    las.x = data[:, 0]
+    las.y = data[:, 1]
+    las.z = data[:, 2]
+    las.classification = labels.reshape(-1)
+    las.write(filename)
+    
 
 def load_pointcloud_dir(dir, outdir, 
                         block_size = 100, 

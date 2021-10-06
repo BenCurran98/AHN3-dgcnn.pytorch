@@ -1,14 +1,18 @@
 import os
+from prepare_data.dtm import build_dtm, gen_agl
+from prepare_data.pointcloud_util import room2blocks
 import torch
 from data import FugroDataset_eval
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
 from util import *
+from prepare_data.process_data import load_pointcloud, save_las_pointcloud
 import sklearn.metrics as metrics
 from torch.utils.tensorboard import SummaryWriter
 from torch.nn.functional import softmax
 from tqdm import tqdm
+from dtm import *
 
 UNCLASSIFIED = 31
 
@@ -114,8 +118,6 @@ def test(k, io,
                     data = data.permute(0, 2, 1).float()
                     batch_size = data.size()[0]
 
-                    print(data.shape)
-
                     seg_pred = model(data)
                     seg_pred = seg_pred.permute(0, 2, 1).contiguous()
                     seg_pred = softmax(seg_pred, dim = 2)
@@ -156,16 +158,14 @@ def test(k, io,
             for room_id in np.unique(room_idx):
                 fout_data_label[room_id].close()
 
-            test_ious = calculate_sem_IoU(test_pred_cls, test_true_cls, num_classes)
             test_true_cls = np.concatenate(test_true_cls)
             test_pred_cls = np.concatenate(test_pred_cls)
             test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
             avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
             
-            outstr = 'Test :: test area: %s, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (test_area,
-                                                                                                    test_acc,
-                                                                                                    avg_per_class_acc,
-                                                                                                    np.mean(test_ious))
+            outstr = 'Test :: test area: %s, test acc: %.6f, test avg acc: %.6f' % (test_area,
+                                                                                    test_acc,
+                                                                                    avg_per_class_acc,)
             io.cprint(outstr)
 
             # calculate confusion matrix
@@ -211,3 +211,103 @@ def test_args(args, io):
         model_root = args.model_root,
         pred_dir = args.test_visu_dir
     )
+
+def predict(k, io, pointcloud_file,
+            pred_pointcloud_file,
+            num_points = 7000,
+            block_size = 30.0,
+            num_classes = 5,
+            num_features = 4,
+            dropout = 0.5,
+            emb_dims = 1024,
+            cuda = False,
+            min_class_confidence = 0.8,
+            model_label = "dgcnn_model",
+            model_root = "checkpoints/dgcnn"):
+    
+    model = DGCNN(num_classes, num_features, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
+
+    if cuda:
+        checkpoint = torch.load(os.path.join(model_root, '%s.t7' % model_label))
+    else:
+        checkpoint = torch.load(os.path.join(model_root, '%s.t7' % model_label), map_location=torch.device('cpu'))
+
+    print("model: ", os.path.join(model_root, '%s.t7' % model_label))
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model = model.eval()
+
+    count_parameters(model)
+
+    io.cprint('%s.t7 restored.' % model_label)
+
+    data, labels = load_pointcloud(pointcloud_file)
+
+    dtm = build_dtm(data)
+    agl = gen_agl(dtm, data)
+
+    data = np.hstack((data, np.reshape(agl, (len(agl), 1))))
+
+    print("orig data: ", data.shape)
+
+    # block_data, _ = pointcloud_util.room2blocks(data, labels, num_points, block_size = block_size, stride = block_size, random_sample =False, use_all_points=True)
+    block_data, _ = room2blocks(data, labels, num_points,
+                                block_size = block_size,
+                                stride = block_size,
+                                random_sample =False,
+                                use_all_points=True)
+
+    preds = np.array([])
+    data = []
+    n = 1
+    for X in block_data:
+        np.savetxt("data{}.txt".format(n), X)
+        if len(data) == 0:
+            data = X
+        else:
+            data = np.vstack((data, X))
+
+        x_lb = np.amin(X[:, 0])
+        y_lb = np.amin(X[:, 1])
+
+        X -= np.array([x_lb, y_lb, 0, 0])
+
+        n += 1
+        print("1: ", X.shape)
+        # X = np.reshape(X, (X.shape[0], X.shape[1], 1))
+        X = X[:, :, np.newaxis]
+        print("2: ", X.shape)
+        X = torch.tensor(X)
+        X = X.permute(2, 1, 0).float()
+        print("3: ", X.shape)
+        logit_pred = model(X)
+        print("L: ", logit_pred.shape)
+        print(logit_pred[:, :, 0:10])
+        logit_pred = logit_pred.permute(0, 2, 1).contiguous()
+        logit_pred = softmax(logit_pred, dim = 2)
+        print(logit_pred[:, :, 0:10])
+        probs, pred = logit_pred.max(dim = 2)
+        print(probs[0:10])
+        print(pred[0:10])
+        pred[torch.where(probs < min_class_confidence)] = UNCLASSIFIED
+        pred = pred.detach().cpu().numpy()
+        pred = pred.reshape(pred.shape[1], pred.shape[0])
+        X = X.permute(2, 1, 0)
+        X = X.detach().cpu().numpy()
+        print("4: ", X.shape)
+        # X = X[0, :, :]
+        
+        X = X[:, :, 0]
+        # X = np.reshape(X, (X.shape[2], X.shape[1]))
+        print("5: ", X.shape)
+        
+        if len(preds) == 0:
+            preds = pred
+        else:
+            # np.concatenate((preds, pred), axis = 0)
+            preds = np.vstack((preds, pred))
+
+        save_las_pointcloud(X, pred, "pc_pred_{}.las".format(n))
+
+    save_las_pointcloud(data, preds, pred_pointcloud_file)
+
+    return data, preds
