@@ -17,10 +17,11 @@ from dtm import *
 UNCLASSIFIED = 31
 
 def test(k, io, 
-            data_dir = "/media/ben/T7 Touch/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
+            data_dir = "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
             num_points = 5000,
             block_size = 30.0,
             num_classes = 5,
+            num_features = 4,
             test_batch_size = 8,
             dropout = 0.5,
             emb_dims = 1024,
@@ -37,7 +38,7 @@ def test(k, io,
     Args:
         k (int): Number of neighbours to calculate in feature spaces
         io (IOStream): Stream where log data is sent to
-        data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "/media/ben/T7 Touch/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY".
+        data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY".
         num_points (int, optional): Number of points to sample from each block. Defaults to 5000.
         block_size (float, optional): Size of blocks to sample from each tile. Defaults to 30.0.
         num_classes (int, optional): Number of classes to train on. Defaults to 5.
@@ -87,7 +88,7 @@ def test(k, io,
 
             io.cprint('Start overall evaluation...')
 
-            model = DGCNN(num_classes, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
+            model = DGCNN(num_classes, num_features, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
 
             if cuda:
                 checkpoint = torch.load(os.path.join(model_root, '%s.t7' % model_label))
@@ -199,6 +200,7 @@ def test_args(args, io):
         num_points = args.num_points,
         block_size = args.block_size,
         num_classes = args.num_classes,
+        num_features = args.num_features,
         test_batch_size = args.test_batch_size,
         dropout = args.dropout,
         emb_dims = args.emb_dims,
@@ -247,66 +249,55 @@ def predict(k, io, pointcloud_file,
 
     data = np.hstack((data, np.reshape(agl, (len(agl), 1))))
 
-    print("orig data: ", data.shape)
-
     # block_data, _ = pointcloud_util.room2blocks(data, labels, num_points, block_size = block_size, stride = block_size, random_sample =False, use_all_points=True)
     block_data, _ = room2blocks(data, labels, num_points,
                                 block_size = block_size,
                                 stride = block_size,
                                 random_sample =False,
-                                use_all_points=True)
+                                use_all_points=False)
 
     preds = np.array([])
     data = []
     n = 1
-    for X in block_data:
-        np.savetxt("data{}.txt".format(n), X)
-        if len(data) == 0:
-            data = X
-        else:
-            data = np.vstack((data, X))
+    with tqdm(block_data, desc = "Classifying") as t:
+        for X in block_data:
+            np.savetxt("data{}.txt".format(n), X)
+            if len(data) == 0:
+                data = X
+            else:
+                data = np.vstack((data, X))
 
-        x_lb = np.amin(X[:, 0])
-        y_lb = np.amin(X[:, 1])
+            x_lb = np.amin(X[:, 0])
+            y_lb = np.amin(X[:, 1])
 
-        X -= np.array([x_lb, y_lb, 0, 0])
+            X -= np.array([x_lb, y_lb, 0, 0])
 
-        n += 1
-        print("1: ", X.shape)
-        # X = np.reshape(X, (X.shape[0], X.shape[1], 1))
-        X = X[:, :, np.newaxis]
-        print("2: ", X.shape)
-        X = torch.tensor(X)
-        X = X.permute(2, 1, 0).float()
-        print("3: ", X.shape)
-        logit_pred = model(X)
-        print("L: ", logit_pred.shape)
-        print(logit_pred[:, :, 0:10])
-        logit_pred = logit_pred.permute(0, 2, 1).contiguous()
-        logit_pred = softmax(logit_pred, dim = 2)
-        print(logit_pred[:, :, 0:10])
-        probs, pred = logit_pred.max(dim = 2)
-        print(probs[0:10])
-        print(pred[0:10])
-        pred[torch.where(probs < min_class_confidence)] = UNCLASSIFIED
-        pred = pred.detach().cpu().numpy()
-        pred = pred.reshape(pred.shape[1], pred.shape[0])
-        X = X.permute(2, 1, 0)
-        X = X.detach().cpu().numpy()
-        print("4: ", X.shape)
-        # X = X[0, :, :]
-        
-        X = X[:, :, 0]
-        # X = np.reshape(X, (X.shape[2], X.shape[1]))
-        print("5: ", X.shape)
-        
-        if len(preds) == 0:
-            preds = pred
-        else:
-            # np.concatenate((preds, pred), axis = 0)
-            preds = np.vstack((preds, pred))
+            n += 1
+            X = X[:, :, np.newaxis]
+            X = torch.tensor(X)
+            X = X.permute(2, 1, 0).float()
+            logit_pred = model(X)
+            logit_pred = logit_pred.permute(0, 2, 1).contiguous()
+            logit_pred = softmax(logit_pred, dim = 2)
+            probs, pred = logit_pred.max(dim = 2)
+            pred[torch.where(probs < min_class_confidence)] = UNCLASSIFIED
+            pred = pred.detach().cpu().numpy()
+            pred = pred.reshape(pred.shape[1], pred.shape[0])
+            X = X.permute(2, 1, 0)
+            X = X.detach().cpu().numpy()
+            
+            X = X[:, :, 0]
 
-        save_las_pointcloud(X, pred, "pc_pred_{}.las".format(n))
+            X += np.array([x_lb, y_lb])
+            
+            if len(preds) == 0:
+                preds = pred
+            else:
+                preds = np.vstack((preds, pred))
+
+            save_las_pointcloud(X, pred, "pc_pred_{}.las".format(n))
+
+            t.update()
 
     save_las_pointcloud(data, preds, pred_pointcloud_file)
 

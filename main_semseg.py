@@ -31,7 +31,7 @@ def _init_():
 if __name__ == "__main__":
     # Training settings
     parser = argparse.ArgumentParser(description='Point Cloud Semantic Segmentation')
-    parser.add_argument('--data_dir', type=str, default='/media/ben/T7 Touch/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY',
+    parser.add_argument('--data_dir', type=str, default='/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY',
                         help='Directory of data')
     parser.add_argument('--tb_dir', type=str, default='log_tensorboard',
                         help='Directory of tensorboard logs')

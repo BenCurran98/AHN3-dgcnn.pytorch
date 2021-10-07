@@ -1,12 +1,12 @@
 from __future__ import print_function
 import os
 import torch
+import gc
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
 from data import FugroDataset
-from data import S3DISDataset_eval
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 def train(k, io, 
-            data_dir = "/media/ben/T7 Touch/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
+            data_dir = "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
             num_points = 5000,
             block_size = 30.0,
             epochs = 30,
@@ -47,7 +47,7 @@ def train(k, io,
     Args:
         k (int): Number of neighbours to calculate in feature spaces
         io (IOStream): Stream where log data is sent to
-        data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "/media/ben/T7 Touch/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY".
+        data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY".
         num_points (int, optional): Number of points to sample from each block. Defaults to 5000.
         block_size (float, optional): Size of blocks to sample from each tile. Defaults to 30.0.
         epochs (int, optional): Number of epochs to train on. Defaults to 30.
@@ -94,6 +94,7 @@ def train(k, io,
     model = DGCNN(num_classes, num_features, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
 
     print(str(model))
+    print(count_parameters(model))
     
     if cuda:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
@@ -202,6 +203,8 @@ def train(k, io,
                 train_acc = metrics.accuracy_score(true_labels, pred_labels)
                 t.set_postfix(A = train_acc, BA = balanced_train_acc)
                 t.update()
+
+                gc.collect()
 
         if scheduler == 'cos':
             scheduler.step()

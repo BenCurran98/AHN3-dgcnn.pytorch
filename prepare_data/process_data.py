@@ -1,5 +1,6 @@
 import os
 import glob
+from shutil import Error
 import numpy as np
 import json
 import h5py
@@ -14,36 +15,77 @@ from dtm import build_dtm, gen_agl
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLASS_MAP_FILE = os.path.join(ROOT_DIR, "params", "class_map.json")
 
-def load_h5_pointcloud(filename):
+def load_h5_pointcloud(filename, features_output = [], features = {}):
     """Load a pointcloud in HDF5 format from `filename`"""
     file = h5py.File(filename, 'r+')
     # only really need position and classification - if we have agl, substitute for z
+    
+    features_output = [f for f in features_output if f in features.keys()]
     position = file['LAS/Position']
-    if 'AGL' in file.keys():
+    data = np.zeros((position.shape[0], len(features_output)))
+    if 'AGL' in file.keys() and "agl" in features_output:
         agl = file['AGL']
-        position = np.hstack((position, agl))
+        data[:, features["agl"]] = agl
 
     labels = file['LAS/Classification']
 
-    return position, labels
+    if "color" in features_output:
+        data[:, features["color"]] = file["LAS/Color"]
+    if "intensity" in features_output:
+        data[:, features["intensity"]] = file["LAS/Intensity"]
+    if "return_number" in features_output:
+        data[:, features["return_number"]] = file["LAS/ReturnNumber"]
+    if "number_of_returns" in features_output:
+        data[:, features["number_of_returns"]] = file["LAS/NumberOfReturns"]
 
-def load_las_pointcloud(filename):
+    return data, labels
+
+def load_las_pointcloud(filename, features_output = [], features = {}):
     """Load a pointcloud in LAS format from `filename`"""
     file = laspy.read(filename)
-    position = np.vstack((file.x, file.y, file.z)).transpose()
-    labels = file.classification
-    return position, labels
 
-def load_pointcloud(filename):
+    features_output = [f for f in features_output if f in features.keys()]
+
+    if any(["x" not in features_output, 
+            "y" not in features_output, 
+            "z" not in features_output,
+            "x" not in features.keys(), 
+            "y" not in features.keys(), 
+            "z" not in features.keys()]):
+        raise Error("No position found in pointcloud!")
+
+    data = np.zeros((file.x.shape[0], len(features_output)))
+    data[:, features["x"]] = file.x
+    data[:, features["y"]] = file.y
+    data[:, features["z"]] = file.z
+    labels = file.classification
+
+    
+    if "red" in features_output:
+        data[:, features["red"]] = file.red
+    if "green" in features_output:
+        data[:, features["green"]] = file.green
+    if "blue" in features_output:
+        data[:, features["blue"]] = file.blue
+    if "intensity" in features_output:
+        data[:, features["intensity"]] = file.intensity
+    if "return_number" in features_output:
+        data[:, features["return_number"]] = np.array(file.return_number)
+    if "number_of_returns" in features_output:
+        data[:, features["number_of_returns"]] = np.array(file.number_of_returns)
+
+    return data, labels
+
+def load_pointcloud(filename, features_output = [], features = {}):
     """Load a pointcloud from a `filename"""
     if filename.split('.')[-1] == 'h5':
-        return load_h5_pointcloud(filename)
+        return load_h5_pointcloud(filename, features_output = features_output, features = features)
     elif filename.split('.')[-1] == 'las':
-        return load_las_pointcloud(filename)
+        return load_las_pointcloud(filename, features_output = features_output, features = features)
     else:
         raise Exception('Unsupported file type!')
 
-def save_las_pointcloud(data, labels, filename):
+def save_las_pointcloud(data, labels, filename, features_output = [], features = {}):
     """Save a pointcloud in LAS format into `filename`
     """
     las = laspy.create(file_version = "1.2", point_format = 3) 
@@ -52,6 +94,23 @@ def save_las_pointcloud(data, labels, filename):
     las.y = data[:, 1]
     las.z = data[:, 2]
     las.classification = labels.reshape(-1)
+
+    features_output = [f for f in features_output if f in features.keys()]
+
+
+    if "red" in features_output:
+        las.red = data[:, features["red"]]
+    if "green" in features_output:
+        las.green = data[:, features["green"]]
+    if "blue" in features_output:
+        las.blue = data[:, features["blue"]]
+    if "intensity" in features_output:
+        las.intensity = data[:, features["intensity"]]
+    if "return_number" in features_output:
+        las.return_number = data[:, features["return_number"]]
+    if "number_of_returns" in features_output:
+        las.number_of_returns = data[:, features["number_of_returns"]]
+            
     las.write(filename)
     
 
@@ -61,6 +120,8 @@ def load_pointcloud_dir(dir, outdir,
                         class_map_file = CLASS_MAP_FILE, 
                         min_num = 100, 
                         las_dir = "converted-pcs",
+                        features_output = [],
+                        features = {},
                         calc_agl = True,
                         cell_size = 1, 
                         desired_seed_cell_size = 90, 
@@ -96,7 +157,7 @@ def load_pointcloud_dir(dir, outdir,
 
     for i in tqdm(range(len(acceptable_files)), desc = "Loading PCs"):
         f = acceptable_files[i]
-        whole_data, whole_labels = load_pointcloud(os.path.join(dir, f))
+        whole_data, whole_labels = load_pointcloud(os.path.join(dir, f), features_output = features_output, features = features)
 
         data, labels = utils.room2blocks(whole_data, 
                                             whole_labels, 
@@ -114,7 +175,7 @@ def load_pointcloud_dir(dir, outdir,
                                                         labels[i], 
                                                         class_map_file = class_map_file)
 
-                if calc_agl:
+                if calc_agl and "agl" in features_output and "agl" in features.keys():
                     dtm = build_dtm(this_data, 
                                     module_path = dtm_module_path,
                                     cell_size = cell_size,
@@ -127,14 +188,34 @@ def load_pointcloud_dir(dir, outdir,
 
                     agl = gen_agl(dtm, this_data)
 
-                    this_data = np.hstack((this_data, np.reshape(agl, (agl.shape[0], 1))))
+                    this_data[:, features["agl"]] = agl
+                    # this_data = np.hstack((this_data, np.reshape(agl, (agl.shape[0], 1))))
 
                 las = laspy.create(file_version = "1.2", point_format = 3) 
 
                 las.x = this_data[:, 0]
                 las.y = this_data[:, 1]
-                las.z = this_data[:, 2 if not calc_agl else 3]
+                current_idx = 2 if not calc_agl else 3
+                las.z = this_data[:, current_idx]
+                current_idx += 1
                 las.classification = this_labels
+                if "red" in features_output:
+                    las.red = this_data[:, current_idx]
+                if "green" in features_output:
+                    las.green = this_data[:, current_idx + 1]
+                if "blue" in features_output:
+                    las.blue = this_data[:, current_idx + 2]
+                    current_idx += 3
+                if "intensity" in features_output:
+                    las.intensity = this_data[:, current_idx]
+                    current_idx += 1
+                if "return_number" in features_output:
+                    las.return_number = this_data[:, current_idx]
+                    current_idx += 1
+                if "number_of_returns" in features_output:
+                    las.number_of_returns = this_data[:, current_idx]
+                    current_idx += 1
+
                 las.write(os.path.join(las_dir, "Area_{}.las".format(tile_num)))
                 class_counts = [len(np.where(this_labels == c)[0]) for c in classes]
                 if all([count > min_num for count in class_counts]):
@@ -341,6 +422,8 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
                             sample_num = sample_num, 
                             min_num = min_class_num, 
                             class_map_file = class_map_file,
+                            features_output = features_output,
+                            features = features,
                             calc_agl = calc_agl, 
                             cell_size = cell_size, 
                             desired_seed_cell_size = desired_seed_cell_size, 
@@ -376,7 +459,7 @@ if __name__ == "__main__":
     parser.add_argument('--categories_file', type = str, default = 'params/categories.json', help = 'JSON file containing label mappings')
     parser.add_argument('--features_file', type = str, default = 'params/features.json', help = 'JSON file containing index mappings of LiDAR features')
     parser.add_argument('--class_map_file', type = str, default = CLASS_MAP_FILE, help = 'File containing class mappings')
-    parser.add_argument('--features_output', nargs = '*', type = str, default = ['X', 'Y', 'Z', 'AGL'], help = 'LiDAR features to extract')
+    parser.add_argument('--features_output', nargs = '*', type = str, default = ["x", "y", "z", "agl"], help = 'LiDAR features to extract')
     parser.add_argument('--npy_data_folder', type = str, default = os.path.join(BASE_DIR, 'data_as_S3DIS_NRI_NPY'), help = 'Output folder of the data summary')
     parser.add_argument('--block_size', type = int, default = 100, help = 'Size of blocks to divide pointclouds into')
     parser.add_argument('--sample_num', type = int, default = 5, help = 'Number of tile samples to take from each point cloud')

@@ -7,7 +7,7 @@ import warnings
 from subprocess import Popen, PIPE
 from sklearn.neighbors import KDTree
 
-def get_dtm_runner(module_path = "/home/ben/external/RoamesDtmGenerator/bin"):
+def get_dtm_runner(module_path = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin"):
     """Get the executable path for the RoamesDTMGenerator module
     """
     if sys.platform == "linux":
@@ -19,7 +19,7 @@ def get_dtm_runner(module_path = "/home/ben/external/RoamesDtmGenerator/bin"):
 
     return dtm_runner
 
-def build_dtm(pc, module_path = "/home/ben/external/RoamesDtmGenerator/bin",
+def build_dtm(pc, module_path = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin",
             cell_size = 1, desired_seed_cell_size = 90, 
             boundary_block_width = 5, detect_water = False, 
             remove_buildings = True, output_tin_file_path = None,
