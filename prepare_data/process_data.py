@@ -11,6 +11,7 @@ from tqdm import tqdm
 import argparse
 import pointcloud_util as utils
 from dtm import build_dtm, gen_agl
+from sklearn.neighbors import NearestNeighbors
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLASS_MAP_FILE = os.path.join(ROOT_DIR, "params", "class_map.json")
@@ -40,11 +41,17 @@ def load_h5_pointcloud(filename, features_output = [], features = {}):
 
     return data, labels
 
-def load_las_pointcloud(filename, features_output = [], features = {}):
+def load_las_pointcloud(filename, features_output = [], features = {}, filter_noise = True):
     """Load a pointcloud in LAS format from `filename`"""
     file = laspy.read(filename)
 
-    features_output = [f for f in features_output if f in features.keys()]
+    avail_fields = [f.name for f in file.header.point_format]
+
+    features_output = [f for f in features_output if f in features.keys() and 
+                            (f in avail_fields or 
+                                f.lower() in avail_fields or 
+                                f.upper() in avail_fields
+                                or f == "agl")]
 
     if any(["x" not in features_output, 
             "y" not in features_output, 
@@ -73,6 +80,15 @@ def load_las_pointcloud(filename, features_output = [], features = {}):
         data[:, features["return_number"]] = np.array(file.return_number)
     if "number_of_returns" in features_output:
         data[:, features["number_of_returns"]] = np.array(file.number_of_returns)
+
+    if filter_noise:
+        neighs = NearestNeighbors(n_neighbors = 2, algorithm = "ball_tree").fit(data[:, 0:3])
+        dists, _ = neighs.kneighbors(data[:, 0:3])
+        print(dists)
+        good_idxs = np.where(dists[:, 1] < 1)[0]
+        print("Filtered {} noise points".format(data.shape[0] - len(good_idxs)))
+        data = data[good_idxs, :]
+        labels = labels[good_idxs]
 
     return data, labels
 
@@ -155,10 +171,14 @@ def load_pointcloud_dir(dir, outdir,
     if not os.path.isdir(las_dir):
         os.mkdir(las_dir)
 
-    for i in tqdm(range(len(acceptable_files)), desc = "Loading PCs"):
+    print(features)
+    print(features_output)
+
+    # for i in tqdm(range(len(acceptable_files)), desc = "Loading PCs"):
+    for i in range(10):
         f = acceptable_files[i]
         whole_data, whole_labels = load_pointcloud(os.path.join(dir, f), features_output = features_output, features = features)
-
+        print(whole_data.shape)
         data, labels = utils.room2blocks(whole_data, 
                                             whole_labels, 
                                             10000, 
@@ -167,6 +187,8 @@ def load_pointcloud_dir(dir, outdir,
                                             stride = block_size/2, 
                                             sample_num = sample_num, 
                                             use_all_points = True)
+
+        print(data[0].shape)
 
         num_good = 0
         with tqdm(range(data.shape[0]), desc = "Saving Data") as t:

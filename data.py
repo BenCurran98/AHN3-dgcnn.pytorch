@@ -36,8 +36,8 @@ class FugroDataset(Dataset):
         Indicates if this is a training or test data set
     data_root : str
         Default location of the directory containing the data (default '')
-    num_point : int
-        The number of points to sample from a point cloud block (default 4096)
+    cell_size : float
+        cell_size (num_point/metre^3) to sample points at (default 0.4641588833612779)
     block_size : float
         Size of the blocks to subdivide a tile into (default 30.0)
     use_all_points : bool
@@ -49,12 +49,13 @@ class FugroDataset(Dataset):
     sample_num : int
         Number of blocks to randomly sample from each tile (default 5)
     """
-    def __init__(self, split='train', data_root='', num_point=4096, 
+    def __init__(self, split='train', data_root='',
+                    cell_size = 0.4641588833612779,
                     block_size=30.0, use_all_points=False, test_prop = 0.2, 
                     classes = [0, 1, 2, 3, 4], sample_num = 5, class_min = 100,
                     n_tries = 10, fields = []):
         super().__init__()
-        self.num_point = num_point
+        self.cell_size = cell_size
         self.block_size = block_size
         self.use_all_points = use_all_points
         self.test_prop = test_prop
@@ -111,11 +112,11 @@ class FugroDataset(Dataset):
                     found = 0
                     n = 0
                     while found < sample_num:
-                        block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
+                        block_points, block_labels = util.room2blocks(points, labels, cell_size = self.cell_size, block_size=self.block_size,
                                                                 stride=self.block_size/10, random_sample=True, sample_num=sample_num - found, use_all_points=self.use_all_points)
-                        for i in range(block_points.shape[0]):
-                            this_block_points = block_points[i, :, :]
-                            this_block_labels = block_labels[i, :]
+                        for i in range(len(block_points)):
+                            this_block_points = block_points[i]
+                            this_block_labels = block_labels[i]
                             label_counts = [len(np.where(this_block_labels == c)[0]) for c in classes]
                             if all([c > class_min for c in label_counts]):
                                 found += 1
@@ -151,16 +152,16 @@ class FugroDataset(Dataset):
                         las.write("../DataSampleTrain/{}_subsampled__block_data{}.las".format(split, index))
 
                 else:
-                    block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
+                    block_points, block_labels = util.room2blocks(points, labels, cell_size = self.cell_size, block_size=self.block_size,
                                                                 stride=self.block_size/3, random_sample=True, sample_num=sample_num, use_all_points=self.use_all_points)
-                    room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
+                    room_idxs.extend([index] * int(len(block_points)))  # extend with number of blocks in a room
                     self.room_points.append(block_points), self.room_labels.append(block_labels)
                     num_point_all.append(labels.size)
 
                 t.set_postfix(num_samples = len(room_idxs))
                 t.update()
-        self.room_points = np.concatenate(self.room_points)
-        self.room_labels = np.concatenate(self.room_labels)
+        # self.room_points = np.concatenate(self.room_points)
+        # self.room_labels = np.concatenate(self.room_labels)
 
         self.room_idxs = np.array(room_idxs)
 
@@ -234,31 +235,17 @@ class FugroDataset(Dataset):
         points = self.room_points[room_idx]   # N * 3
 
         labels = self.room_labels[room_idx]   # N
-
-        N_points = points.shape[0]
-
-        if not self.use_all_points:
-            N_points = self.num_point
-
-        # subsample the points
-        selected_point_idxs = self.sample_points(idx, N_points)
-
-        selected_points = points[selected_point_idxs, :]
-        selected_labels = labels[selected_point_idxs]
-
-        # generate a binary training mask for the points (which will be ignored in testing)
-        # mask = self.create_train_mask(idx, N_points)
         
-        return selected_points, selected_labels, idx#, mask
+        return points, labels, idx
 
     def __len__(self):
         return len(self.room_idxs)
 
 class FugroDataset_eval(Dataset):
-    def __init__(self, split='train', data_root='', num_point=4096, block_size=30.0, use_all_points=False):
+    def __init__(self, split='train', data_root='', cell_size = 0.4641588833612779, block_size=30.0, use_all_points=False):
         super().__init__()
-        self.num_point = num_point
         self.block_size = block_size
+        self.cell_size = cell_size
         
         self.use_all_points = use_all_points
         rooms = sorted(os.listdir(data_root))
@@ -269,8 +256,11 @@ class FugroDataset_eval(Dataset):
         self.centres = []
 
         room_idxs = []
-        # for index in tqdm(range(len(rooms_split)), "Sampling Tiles"):
-        for index in tqdm(range(30), "Samplng Tiles"):
+
+        print(rooms_split)
+        print(len(rooms_split))
+        for index in tqdm(range(len(rooms_split)), "Sampling Tiles"):
+        # for index in tqdm(range(1), "Samplng Tiles"):
             room_name = rooms_split[index]
             room_path = os.path.join(data_root, room_name)
             room_path = os.path.join(data_root, room_name)
@@ -278,21 +268,15 @@ class FugroDataset_eval(Dataset):
             points, labels = room_data[:, 0:-1], room_data[:, -1]
             coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
             self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
-            block_points, block_labels = util.room2blocks(points, labels, self.num_point, block_size=self.block_size,
+            block_points, block_labels = util.room2blocks(points, labels, cell_size = self.cell_size, block_size=self.block_size,
                                                        stride=self.block_size, random_sample=False, sample_num=None, use_all_points=self.use_all_points)
-            these_centres = []
-            for i in range(block_points.shape[0]):
-                this_centre = np.mean(block_points[i, :])
-                these_centres.append(this_centre)
             f = open("../DataSampleTest/block_data{}.txt".format(index), "w")
-            these_points = np.concatenate(block_points)
+            these_points = np.concatenate(block_points, 1)[0, :]
             for i in range(these_points.shape[0]):
                 f.write("%f %f %f\n" % (these_points[i, 0], these_points[i, 1], these_points[i, 2]))
             f.close()
-            room_idxs.extend([index] * int(block_points.shape[0]))  # extend with number of blocks in a room
+            room_idxs.extend([index] * int(len(block_points)))  # extend with number of blocks in a room
             self.room_points.append(block_points), self.room_labels.append(block_labels)
-        self.room_points = np.concatenate(self.room_points)
-        self.room_labels = np.concatenate(self.room_labels)
 
         self.room_idxs = np.array(room_idxs)
         print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
@@ -300,14 +284,22 @@ class FugroDataset_eval(Dataset):
     def __getitem__(self, idx):  # get items in one block
         selected_points = self.room_points[idx]
         current_labels = self.room_labels[idx] 
-        center = np.mean(selected_points, axis=0)
-        N_points = selected_points.shape[0]
 
-        # add normalized xyz
-        selected_points[:, 0] = selected_points[:, 0] - center[0]
-        selected_points[:, 1] = selected_points[:, 1] - center[1]
-
-        return selected_points, current_labels, center
+        return selected_points, current_labels
 
     def __len__(self):
         return len(self.room_idxs)
+
+def pc_collate(data):
+    _, labels, room_idxs = zip(*data)
+    lengths = [len(labs) for labs in labels]
+    min_num_points = min(lengths)
+    features = torch.zeros(len(data), min_num_points, data[0][0].shape[1]) # (batch_size, num_points, num_features)
+    batch_labels = torch.zeros(len(data), len(labels))
+    for i in range(len(data)):
+        num_points = data[i][0].shape[0]
+        selected_idxs = np.random.choice(range(num_points), min_num_points, replace = False)
+        features[i, :, :] = data[i][0][selected_idxs, :]
+        batch_labels[i, :] = data[i][1][selected_idxs]
+    
+    return features, batch_labels, room_idxs

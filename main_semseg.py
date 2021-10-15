@@ -73,8 +73,8 @@ if __name__ == "__main__":
                         help='random seed (default: 1)')
     parser.add_argument('--eval', type=bool, default=False,
                         help='evaluate the model')
-    parser.add_argument('--num_points', type=int, default=4096,
-                        help='num of points to use')
+    parser.add_argument('--cell_size', type=float, default=0.4641588833612779,
+                        help='cell_size to sample points at')
     parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout rate')
     parser.add_argument('--emb_dims', type=int, default=1024, metavar='N',

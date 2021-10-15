@@ -81,7 +81,7 @@ def sample_data_label(data, label, num_sample):
     return new_data, new_label
 
 
-def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
+def room2blocks(data, label, cell_size = 0.4641588833612779, block_size=1.0, stride=1.0,
                 random_sample=False, sample_num=None, sample_aug=1, use_all_points=False):
     """ Prepare block training data.
     Args:
@@ -110,6 +110,9 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
     y_ub = np.amax(data[:, 1])
     y_lb = np.amin(data[:, 1])
 
+    z_ub = np.amax(data[:, 2])
+    z_lb = np.amin(data[:, 2])
+
     # Get the corner location for our sampling blocks    
     xbeg_list = []
     ybeg_list = []
@@ -130,7 +133,7 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
             ybeg = np.random.uniform(y_lb, y_ub)
             xbeg_list.append(xbeg)
             ybeg_list.append(ybeg)
-            
+
     # Collect blocks
     block_data_list = []
     block_label_list = []
@@ -164,15 +167,41 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
             block_data_list.append(block_data)
             block_label_list.append(block_label)
         else:
-            # randomly subsample data
-            block_data_sampled, block_label_sampled = \
-                sample_data_label(block_data, block_label, num_point)
-            block_data_list.append(np.expand_dims(block_data_sampled, 0))
-            block_label_list.append(np.expand_dims(block_label_sampled, 0))
+            # split into cells of size cell size, select points to get density
+            sample_points = []
+            sample_labels = []
+            num_to_sample = int(np.ceil(1/(cell_size ** 3)))
+            num_block_z = int(np.ceil(z_ub - z_lb)/cell_size + 1)
+            num_blocks = int(np.ceil(block_size/cell_size))
+            for i in range(num_blocks):
+                for j in range(num_block_z):
+                    this_zcond = (block_data[:, 2] <= z_lb + (j + 1) * cell_size) & (block_data[:, 2] >= z_lb + cell_size * j)
+                    if len(np.where(this_zcond)[0]) == 0:
+                        continue
+                    this_xcond = (block_data[:, 0] <= xbeg + (i + 1) * cell_size) & (block_data[:, 0] >= xbeg + cell_size * i)
+                    this_ycond = (block_data[:, 1] <= ybeg + (i + 1) * cell_size) & (block_data[:, 1] >= ybeg + cell_size * i)
+                    
+                    this_cond = this_xcond & this_ycond & this_zcond
+                    these_points = block_data[this_cond, :]
+                    these_labels = block_label[this_cond]
 
-    if use_all_points:
-        block_data_return, block_label_return = np.array(block_data_list, dtype = object), np.array(block_label_list, dtype = object)
-    else:
-        block_data_return, block_label_return = np.concatenate(block_data_list, 0), np.concatenate(block_label_list, 0)
+                    if these_points.shape[0] > 0:
+                        these_points_sampled, these_labels_sampled = \
+                            sample_data_label(these_points, these_labels, num_to_sample)
+                        sample_points.append(these_points_sampled)
+                        sample_labels.append(these_labels_sampled)
+            if len(sample_points) > 0:
+                block_data_sampled = np.concatenate(sample_points, 0)
+                block_label_sampled = np.concatenate(sample_labels, 0)
 
-    return block_data_return, block_label_return
+                block_data_list.append(np.expand_dims(block_data_sampled, 0))
+                block_label_list.append(np.expand_dims(block_label_sampled, 0))
+    
+    print([d.shape for d in block_data_list])
+    return block_data_list, block_label_list
+    # if use_all_points:
+    #     block_data_return, block_label_return = np.array(block_data_list, dtype = object), np.array(block_label_list, dtype = object)
+    # else:
+    #     block_data_return, block_label_return = np.concatenate(block_data_list, 0), np.concatenate(block_label_list, 0)
+
+    # return block_data_return, block_label_return

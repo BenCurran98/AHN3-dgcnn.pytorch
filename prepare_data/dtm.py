@@ -20,7 +20,7 @@ def get_dtm_runner(module_path = "/media/ben/ExtraStorage/external/RoamesDtmGene
     return dtm_runner
 
 def build_dtm(pc, module_path = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin",
-            cell_size = 1, desired_seed_cell_size = 90, 
+            cell_size = 0.4641588833612779, desired_seed_cell_size = 100.0, 
             boundary_block_width = 5, detect_water = False, 
             remove_buildings = True, output_tin_file_path = None,
             dtm_buffer = 6, stdout_file = "", is_dry_run = False):
@@ -39,6 +39,8 @@ def build_dtm(pc, module_path = "/media/ben/ExtraStorage/external/RoamesDtmGener
         stdout_file (str, optional): File to write stdout contents from DTM module execution. Defaults to "".
         is_dry_run (bool, optional): Whether to just generate the binary DTM file. Defaults to False.
     """
+
+    output_tin_file_path = os.path.join(os.getcwd(), "dtm")
 
     if pc.shape[0] == 0:
         warnings.warn("No points found in pointcloud!")
@@ -97,7 +99,7 @@ def build_dtm(pc, module_path = "/media/ben/ExtraStorage/external/RoamesDtmGener
     new_dtm_file = os.path.join(output_path, 
                                 "dtm_{}_{}.dat".format(int(min_x), int(min_y)))
     num_dtm_points = int(np.floor(dtm_width/cell_size + 1 * 0.5)  ** 2)
-    dtm_edge_size = int(np.sqrt(num_dtm_points))
+    dtm_edge_size = int(np.sqrt(num_dtm_points)) + 1
     if not os.path.isfile(new_dtm_file):
         warnings.warn("DTM Binary file notfound: {}".format(new_dtm_file))
         return pc - np.mean(pc)
@@ -105,7 +107,6 @@ def build_dtm(pc, module_path = "/media/ben/ExtraStorage/external/RoamesDtmGener
     with open(new_dtm_file, "rb") as f:
         dtm_heights = np.fromfile(f, dtype = np.float32)
     
-
     points = np.zeros((dtm_edge_size * dtm_edge_size, 3))
     for row in range(dtm_edge_size):
         for col in range(dtm_edge_size): 
@@ -115,9 +116,12 @@ def build_dtm(pc, module_path = "/media/ben/ExtraStorage/external/RoamesDtmGener
                                         dtm_heights[col * dtm_edge_size + row]
                                                     ]
     
-
     no_data_value = -1e4
-    is_nan_array = [points[i, 2] == no_data_value for i in range(points.shape[0])]
+    not_nan_array = np.where(points[:, 2] != no_data_value)[0]
+
+    points = points[not_nan_array]
+    
+    np.savetxt(os.path.join(temp_dir, "pts.txt"), points)
 
     if dump_tin_ply:
         tin_file_base = "tin_{}_{}.ply".format(int(min_x), int(min_y))
@@ -129,7 +133,7 @@ def build_dtm(pc, module_path = "/media/ben/ExtraStorage/external/RoamesDtmGener
     
     rmtree(temp_dir)
 
-    return [points[i, :] for i in range(points.shape[0]) if not is_nan_array[i]]
+    return points
 
 def gen_agl(dtm, pc):
     """Generate the agl for a pointcloud given a DTM

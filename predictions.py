@@ -9,6 +9,9 @@ from test import UNCLASSIFIED
 
 def get_predictions(pred_file, las_file):
     result = np.loadtxt(pred_file)
+
+    if len(result) == 0:
+        return [], []
     
     labels = result[:, 3]
     points = result[:, 0:3]

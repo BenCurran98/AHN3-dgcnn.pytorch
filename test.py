@@ -2,7 +2,7 @@ import os
 from prepare_data.dtm import build_dtm, gen_agl
 from prepare_data.pointcloud_util import room2blocks
 import torch
-from data import FugroDataset_eval
+from data import FugroDataset_eval, pc_collate
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
@@ -18,7 +18,7 @@ UNCLASSIFIED = 31
 
 def test(k, io, 
             data_dir = "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
-            num_points = 5000,
+            cell_size = 0.4641588833612779,
             block_size = 30.0,
             num_classes = 5,
             num_features = 4,
@@ -64,9 +64,9 @@ def test(k, io,
     for test_area in [1]:
         test_area = str(test_area)
         if (test_area == 'all') or (test_area == test_area):
-            dataset = FugroDataset_eval(split='test', data_root=data_dir, num_point=num_points,
+            dataset = FugroDataset_eval(split='test', data_root=data_dir, cell_size = cell_size,
                                    block_size=block_size, use_all_points=use_all_points)
-            test_loader = DataLoader(dataset, batch_size=test_batch_size, shuffle=False, drop_last=False)
+            test_loader = DataLoader(dataset, batch_size=test_batch_size, collate_fn = pc_collate, shuffle=False, drop_last=False)
 
             room_idx = np.array(dataset.room_idxs)
 
@@ -114,14 +114,15 @@ def test(k, io,
             num_batch = 0
             
             with tqdm(test_loader, desc = "Testing") as t:
-                for data, seg, centers in test_loader:
+                for data, seg in test_loader:
+                    print(data.shape)
                     data, seg = data.to(device), seg.to(device)
                     data = data.permute(0, 2, 1).float()
                     batch_size = data.size()[0]
 
-                    seg_pred = model(data)
-                    seg_pred = seg_pred.permute(0, 2, 1).contiguous()
+                    seg_pred, _ = model(data)
                     seg_pred = softmax(seg_pred, dim = 2)
+                    seg_pred = seg_pred.permute(0, 2, 1).contiguous()
                     vals, pred = seg_pred.max(dim = 2)
                     # vals = seg_pred.amax(dim = 2)
                     pred[torch.where(vals < min_class_confidence)] = UNCLASSIFIED
@@ -144,7 +145,7 @@ def test(k, io,
                         room_id = room_idx[num_batch + batch_id]
                         for i in range(pts.shape[0]):
                             fout_data_label[room_id].write('%f %f %f %d\n' % (
-                                (pts[i, 0] + centers[batch_id, 0]), (pts[i, 1] + centers[batch_id, 1]), pts[i, 2],
+                                pts[i, 0], pts[i, 1], pts[i, 2],
                                 pred_[i]))
 
                             true_data_labels[room_id].write("%d\n" % l[i])
@@ -197,7 +198,7 @@ def test_args(args, io):
         args.k,
         io,
         data_dir = args.data_dir,
-        num_points = args.num_points,
+        cell_size = args.cell_size,
         block_size = args.block_size,
         num_classes = args.num_classes,
         num_features = args.num_features,
@@ -216,7 +217,7 @@ def test_args(args, io):
 
 def predict(k, io, pointcloud_file,
             pred_pointcloud_file,
-            num_points = 7000,
+            cell_size = 0.4641588833612779,
             block_size = 30.0,
             num_classes = 5,
             num_features = 4,
@@ -225,7 +226,9 @@ def predict(k, io, pointcloud_file,
             cuda = False,
             min_class_confidence = 0.8,
             model_label = "dgcnn_model",
-            model_root = "checkpoints/dgcnn"):
+            model_root = "checkpoints/dgcnn",
+            features_output = [], 
+            features = {}):
     
     model = DGCNN(num_classes, num_features, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
 
@@ -242,15 +245,18 @@ def predict(k, io, pointcloud_file,
 
     io.cprint('%s.t7 restored.' % model_label)
 
-    data, labels = load_pointcloud(pointcloud_file)
+    data, labels = load_pointcloud(pointcloud_file, features_output = features_output, features = features)
+
+    print(data[0:10, :])
 
     dtm = build_dtm(data)
     agl = gen_agl(dtm, data)
 
     data = np.hstack((data, np.reshape(agl, (len(agl), 1))))
 
-    # block_data, _ = pointcloud_util.room2blocks(data, labels, num_points, block_size = block_size, stride = block_size, random_sample =False, use_all_points=True)
-    block_data, _ = room2blocks(data, labels, num_points,
+    print(data[0:10, :])
+
+    block_data, _ = room2blocks(data, labels, cell_size = cell_size,
                                 block_size = block_size,
                                 stride = block_size,
                                 random_sample =False,
@@ -276,10 +282,21 @@ def predict(k, io, pointcloud_file,
             X = X[:, :, np.newaxis]
             X = torch.tensor(X)
             X = X.permute(2, 1, 0).float()
-            logit_pred = model(X)
+            print(X.shape)
+
+            # seg_pred = model(data)
+            # seg_pred = seg_pred.permute(0, 2, 1).contiguous()
+            # seg_pred = softmax(seg_pred, dim = 2)
+            # vals, pred = seg_pred.max(dim = 2)
+
+            logit_pred, _ = model(X)
             logit_pred = logit_pred.permute(0, 2, 1).contiguous()
             logit_pred = softmax(logit_pred, dim = 2)
+            print(logit_pred[0, 0:100, :])
             probs, pred = logit_pred.max(dim = 2)
+
+            print(pred[0:100])
+            print(probs[0:100, :])
             pred[torch.where(probs < min_class_confidence)] = UNCLASSIFIED
             pred = pred.detach().cpu().numpy()
             pred = pred.reshape(pred.shape[1], pred.shape[0])
@@ -288,7 +305,7 @@ def predict(k, io, pointcloud_file,
             
             X = X[:, :, 0]
 
-            X += np.array([x_lb, y_lb])
+            X += np.array([x_lb, y_lb, 0, 0])
             
             if len(preds) == 0:
                 preds = pred
