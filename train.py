@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
-from data import FugroDataset, pc_collate
+from data import FugroDataset, pc_collate_train
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
@@ -79,13 +79,13 @@ def train(k, io,
     train_data = FugroDataset(split='train', data_root=data_dir, cell_size = cell_size,
                      block_size=block_size, use_all_points = use_all_points, test_prop = test_prop, sample_num = sample_num, class_min = min_class_num, classes = range(num_classes))
     train_loader = DataLoader(
-        train_data, num_workers=8, batch_size=train_batch_size, collate_fn = pc_collate,
+        train_data, num_workers=8, batch_size=train_batch_size, collate_fn = pc_collate_train,
         shuffle=True, drop_last=True)
 
     test_data = FugroDataset(split='test', data_root=data_dir, cell_size = cell_size,
                      block_size=block_size, test_prop = test_prop, classes = range(num_classes))
     test_loader = DataLoader(
-        test_data, num_workers=8, batch_size=test_batch_size, collate_fn = pc_collate,
+        test_data, num_workers=8, batch_size=test_batch_size, collate_fn = pc_collate_train,
         shuffle=True, drop_last=True)
 
     device = torch.device("cuda" if cuda else "cpu")

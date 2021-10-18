@@ -114,6 +114,7 @@ class FugroDataset(Dataset):
                     while found < sample_num:
                         block_points, block_labels = util.room2blocks(points, labels, cell_size = self.cell_size, block_size=self.block_size,
                                                                 stride=self.block_size/10, random_sample=True, sample_num=sample_num - found, use_all_points=self.use_all_points)
+
                         for i in range(len(block_points)):
                             this_block_points = block_points[i]
                             this_block_labels = block_labels[i]
@@ -257,10 +258,7 @@ class FugroDataset_eval(Dataset):
 
         room_idxs = []
 
-        print(rooms_split)
-        print(len(rooms_split))
         for index in tqdm(range(len(rooms_split)), "Sampling Tiles"):
-        # for index in tqdm(range(1), "Samplng Tiles"):
             room_name = rooms_split[index]
             room_path = os.path.join(data_root, room_name)
             room_path = os.path.join(data_root, room_name)
@@ -271,12 +269,13 @@ class FugroDataset_eval(Dataset):
             block_points, block_labels = util.room2blocks(points, labels, cell_size = self.cell_size, block_size=self.block_size,
                                                        stride=self.block_size, random_sample=False, sample_num=None, use_all_points=self.use_all_points)
             f = open("../DataSampleTest/block_data{}.txt".format(index), "w")
-            these_points = np.concatenate(block_points, 1)[0, :]
+            these_points = np.concatenate(block_points)
             for i in range(these_points.shape[0]):
                 f.write("%f %f %f\n" % (these_points[i, 0], these_points[i, 1], these_points[i, 2]))
             f.close()
             room_idxs.extend([index] * int(len(block_points)))  # extend with number of blocks in a room
-            self.room_points.append(block_points), self.room_labels.append(block_labels)
+            for i in range(len(block_points)):
+                self.room_points.append(block_points[i]), self.room_labels.append(block_labels[i])
 
         self.room_idxs = np.array(room_idxs)
         print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
@@ -290,16 +289,34 @@ class FugroDataset_eval(Dataset):
     def __len__(self):
         return len(self.room_idxs)
 
-def pc_collate(data):
-    _, labels, room_idxs = zip(*data)
-    lengths = [len(labs) for labs in labels]
+def pc_collate_train(data):
+    labels = [data[i][1] for i in range(len(data))]
+    lengths = [len(lab) for lab in labels]
+
+    room_idxs = [data[i][2] for i in range(len(data))]
+    
     min_num_points = min(lengths)
     features = torch.zeros(len(data), min_num_points, data[0][0].shape[1]) # (batch_size, num_points, num_features)
-    batch_labels = torch.zeros(len(data), len(labels))
+    batch_labels = torch.zeros(len(data), min_num_points)
     for i in range(len(data)):
         num_points = data[i][0].shape[0]
         selected_idxs = np.random.choice(range(num_points), min_num_points, replace = False)
-        features[i, :, :] = data[i][0][selected_idxs, :]
-        batch_labels[i, :] = data[i][1][selected_idxs]
+        features[i, :, :] = torch.tensor(data[i][0][selected_idxs, :])
+        batch_labels[i, :] = torch.tensor(data[i][1][selected_idxs])
     
     return features, batch_labels, room_idxs
+
+def pc_collate_test(data):
+    labels = [data[i][1] for i in range(len(data))]
+    lengths = [len(lab) for lab in labels]
+    
+    min_num_points = min(lengths)
+    features = torch.zeros(len(data), min_num_points, data[0][0].shape[1]) # (batch_size, num_points, num_features)
+    batch_labels = torch.zeros(len(data), min_num_points)
+    for i in range(len(data)):
+        num_points = data[i][0].shape[0]
+        selected_idxs = np.random.choice(range(num_points), min_num_points, replace = False)
+        features[i, :, :] = torch.tensor(data[i][0][selected_idxs, :])
+        batch_labels[i, :] = torch.tensor(data[i][1][selected_idxs])
+    
+    return features, batch_labels

@@ -194,14 +194,7 @@ def room2blocks(data, label, cell_size = 0.4641588833612779, block_size=1.0, str
                 block_data_sampled = np.concatenate(sample_points, 0)
                 block_label_sampled = np.concatenate(sample_labels, 0)
 
-                block_data_list.append(np.expand_dims(block_data_sampled, 0))
-                block_label_list.append(np.expand_dims(block_label_sampled, 0))
+                block_data_list.append(block_data_sampled)
+                block_label_list.append(block_label_sampled)
     
-    print([d.shape for d in block_data_list])
     return block_data_list, block_label_list
-    # if use_all_points:
-    #     block_data_return, block_label_return = np.array(block_data_list, dtype = object), np.array(block_label_list, dtype = object)
-    # else:
-    #     block_data_return, block_label_return = np.concatenate(block_data_list, 0), np.concatenate(block_label_list, 0)
-
-    # return block_data_return, block_label_return

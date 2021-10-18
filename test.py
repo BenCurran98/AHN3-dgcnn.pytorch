@@ -2,7 +2,7 @@ import os
 from prepare_data.dtm import build_dtm, gen_agl
 from prepare_data.pointcloud_util import room2blocks
 import torch
-from data import FugroDataset_eval, pc_collate
+from data import FugroDataset_eval, pc_collate_test
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
@@ -66,7 +66,7 @@ def test(k, io,
         if (test_area == 'all') or (test_area == test_area):
             dataset = FugroDataset_eval(split='test', data_root=data_dir, cell_size = cell_size,
                                    block_size=block_size, use_all_points=use_all_points)
-            test_loader = DataLoader(dataset, batch_size=test_batch_size, collate_fn = pc_collate, shuffle=False, drop_last=False)
+            test_loader = DataLoader(dataset, batch_size=test_batch_size, collate_fn = pc_collate_test, shuffle=False, drop_last=False)
 
             room_idx = np.array(dataset.room_idxs)
 
@@ -115,7 +115,6 @@ def test(k, io,
             
             with tqdm(test_loader, desc = "Testing") as t:
                 for data, seg in test_loader:
-                    print(data.shape)
                     data, seg = data.to(device), seg.to(device)
                     data = data.permute(0, 2, 1).float()
                     batch_size = data.size()[0]
