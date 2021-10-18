@@ -11,7 +11,7 @@ from tqdm import tqdm
 import argparse
 import pointcloud_util as utils
 from dtm import build_dtm, gen_agl
-from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import NearestNeighbors, KDTree
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLASS_MAP_FILE = os.path.join(ROOT_DIR, "params", "class_map.json")
@@ -82,9 +82,8 @@ def load_las_pointcloud(filename, features_output = [], features = {}, filter_no
         data[:, features["number_of_returns"]] = np.array(file.number_of_returns)
 
     if filter_noise:
-        neighs = NearestNeighbors(n_neighbors = 2, algorithm = "ball_tree").fit(data[:, 0:3])
-        dists, _ = neighs.kneighbors(data[:, 0:3])
-        print(dists)
+        kdtree = KDTree(data[:, 0:3], metric = "euclidean")
+        dists, _ = kdtree.query(data[:, 0:3], k = 2)
         good_idxs = np.where(dists[:, 1] < 1)[0]
         print("Filtered {} noise points".format(data.shape[0] - len(good_idxs)))
         data = data[good_idxs, :]
@@ -174,8 +173,7 @@ def load_pointcloud_dir(dir, outdir,
     print(features)
     print(features_output)
 
-    # for i in tqdm(range(len(acceptable_files)), desc = "Loading PCs"):
-    for i in range(10):
+    for i in tqdm(range(len(acceptable_files)), desc = "Loading PCs"):
         f = acceptable_files[i]
         whole_data, whole_labels = load_pointcloud(os.path.join(dir, f), features_output = features_output, features = features)
         print(whole_data.shape)
@@ -191,8 +189,8 @@ def load_pointcloud_dir(dir, outdir,
         print(data[0].shape)
 
         num_good = 0
-        with tqdm(range(data.shape[0]), desc = "Saving Data") as t:
-            for i in range(data.shape[0]):
+        with tqdm(range(len(data)), desc = "Saving Data") as t:
+            for i in range(len(data)):
                 this_data, this_labels = convert_pc_labels(data[i], 
                                                         labels[i], 
                                                         class_map_file = class_map_file)
@@ -487,7 +485,7 @@ if __name__ == "__main__":
     parser.add_argument('--sample_num', type = int, default = 5, help = 'Number of tile samples to take from each point cloud')
     parser.add_argument('--min_class_num', type = int, default = 100, help = 'Minimum number of points per class for the pointcloud to be used')
     parser.add_argument('--calc_agl', type = bool, default = True, help = 'Whether to calculate AGL for the pointcloud')
-    parser.add_argument('--cell_size', type = int, default = 1, help = 'Size of DTM cell')
+    parser.add_argument('--cell_size', type = float, default = 1, help = 'Size of DTM cell')
     parser.add_argument('--desired_seed_cell_size', type = int, default = 90, help = 'Size of DTM seed cell')
     parser.add_argument('--boundary_block_width', type = int, default = 5, help = 'Number of blocks to use on the boundary')
     parser.add_argument('--detect_water', type = bool, default = False, help = 'Whether to detect water in DTM generation')
