@@ -99,8 +99,8 @@ if __name__ == "__main__":
                         help = 'Label of model file')
     parser.add_argument('--min_class_confidence', type = float, default = 0.8, 
                         help = 'Minimum confidence value for the model to label a point as belonging to a class')
-    parser.add_argument('--density', type = float, default = 1.0, 
-                        help = 'Density to sample points at')
+    parser.add_argument('--num_point', type = int, default = 7000, help = "Number of points to sample from a pointcloud tile")    
+
     args = parser.parse_args()
 
     _init_()

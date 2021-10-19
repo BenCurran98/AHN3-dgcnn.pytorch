@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
-from data import FugroDataset, pc_collate_train
+from data import FugroDataset
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 def train(k, io, 
             data_dir = "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
-            density = 1,
+            num_point = 7000,
             block_size = 30.0,
             epochs = 30,
             num_classes = 5,
@@ -76,16 +76,16 @@ def train(k, io,
     torch.set_num_threads(num_threads)
     torch.set_num_interop_threads(num_interop_threads)
 
-    train_data = FugroDataset(split='train', data_root=data_dir, density = density,
+    train_data = FugroDataset(split='train', data_root=data_dir, num_point = num_point,
                      block_size=block_size, use_all_points = use_all_points, test_prop = test_prop, sample_num = sample_num, class_min = min_class_num, classes = range(num_classes))
     train_loader = DataLoader(
-        train_data, num_workers=8, batch_size=train_batch_size, collate_fn = pc_collate_train,
+        train_data, num_workers=8, batch_size=train_batch_size,
         shuffle=True, drop_last=True)
 
-    test_data = FugroDataset(split='test', data_root=data_dir, density = density,
+    test_data = FugroDataset(split='test', data_root=data_dir, num_point = num_point,
                      block_size=block_size, test_prop = test_prop, classes = range(num_classes))
     test_loader = DataLoader(
-        test_data, num_workers=8, batch_size=test_batch_size, collate_fn = pc_collate_train,
+        test_data, num_workers=8, batch_size=test_batch_size,
         shuffle=True, drop_last=True)
 
     device = torch.device("cuda" if cuda else "cpu")
@@ -153,14 +153,13 @@ def train(k, io,
 
         with tqdm(train_loader, desc = "Training epoch {}".format(epoch)) as t:
             for data, seg, idx in train_loader:
-                mask = torch.tensor(train_data.create_train_mask(idx, data.shape[0], exclude_classes = exclude_classes))
+                mask = torch.tensor(train_data.create_train_mask(idx, data.shape[1], exclude_classes = exclude_classes))
                 data, seg, mask = data.to(device), seg.to(device), mask.to(device)
                 data = data.permute(0, 2, 1).float()
                 batch_size = data.size()[0]
                 opt.zero_grad()
                 seg_pred, _ = model(data) # batch_size * num_points * num_classes
                 seg_pred = F.softmax(seg_pred, dim = 1)
-
                 # only use the points indicated by the mask in back propogation- this acts as a kind of label balancing
                 focus_seg = num_classes * torch.ones_like(seg)
                 focus_pred = torch.zeros((seg_pred.shape[0], num_classes + 1, seg_pred.shape[2]))
@@ -199,6 +198,9 @@ def train(k, io,
                 pred_labels = pred_np.reshape(-1)
                 pred_idxs = np.where(pred_labels != num_classes)[0]
                 pred_labels = pred_labels[pred_idxs]
+
+                print(true_labels)
+                print(pred_labels)
                 balanced_train_acc = metrics.balanced_accuracy_score(true_labels, pred_labels)
                 train_acc = metrics.accuracy_score(true_labels, pred_labels)
                 t.set_postfix(A = train_acc, BA = balanced_train_acc)
@@ -308,7 +310,7 @@ def train_args(args, io):
         args.k,
         io,
         data_dir = args.data_dir,
-        density = args.density,
+        num_point = args.num_point,
         block_size = args.block_size,
         epochs = args.epochs,
         num_classes = args.num_classes,

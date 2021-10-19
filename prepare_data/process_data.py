@@ -24,6 +24,9 @@ def load_h5_pointcloud(filename, features_output = [], features = {}):
     features_output = [f for f in features_output if f in features.keys()]
     position = file['LAS/Position']
     data = np.zeros((position.shape[0], len(features_output)))
+    data[:, features["x"]] = position[:, 0]
+    data[:, features["y"]] = position[:, 1]
+    data[:, features["z"]] = position[:, 2]
     if 'AGL' in file.keys() and "agl" in features_output:
         agl = file['AGL']
         data[:, features["agl"]] = agl
@@ -132,6 +135,7 @@ def save_las_pointcloud(data, labels, filename, features_output = [], features =
 def load_pointcloud_dir(dir, outdir, 
                         block_size = 100, 
                         sample_num = 5, 
+                        num_point = 7000,
                         class_map_file = CLASS_MAP_FILE, 
                         min_num = 100, 
                         las_dir = "converted-pcs",
@@ -146,7 +150,6 @@ def load_pointcloud_dir(dir, outdir,
                         output_tin_file_path = None,
                         dtm_buffer = 6,
                         dtm_module_path = "/media/ben//ExternalStorage/external/RoamesDtmGenerator/bin",
-                        density = 1,
                         use_all_points = False):
     """Load a set of pointclouds from a directory and save them in a txt file
 
@@ -181,7 +184,7 @@ def load_pointcloud_dir(dir, outdir,
         print(whole_data.shape)
         data, labels = utils.room2blocks(whole_data, 
                                             whole_labels, 
-                                            density = density, 
+                                            num_point = num_point, 
                                             block_size = block_size, 
                                             random_sample = False, 
                                             stride = block_size/2, 
@@ -399,7 +402,7 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
                 min_class_num, class_map_file, calc_agl, dtm_cell_size, 
                 desired_seed_cell_size, boundary_block_width, detect_water,
                 remove_buildings, output_tin_file_path, dtm_buffer,
-                dtm_module_path, density):
+                dtm_module_path, num_point):
     """Pre-process raw data for the classifier
 
     Args:
@@ -429,6 +432,13 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
     else:
         os.mkdir(data_folder)
 
+    if os.path.isdir(processed_data_folder):
+        os.rmdir(processed_data_folder)
+        os.mkdir(processed_data_folder)
+    else:
+        os.mkdir(processed_data_folder)
+        
+
     categories = {float(c): categories[c] for c in categories.keys()}
 
     print("Base: ", base_dir)
@@ -442,6 +452,7 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
     load_pointcloud_dir(pc_folder, data_folder, 
                             block_size = block_size, 
                             sample_num = sample_num, 
+                            num_point = num_point,
                             min_num = min_class_num, 
                             class_map_file = class_map_file,
                             features_output = features_output,
@@ -454,8 +465,7 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
                             remove_buildings = remove_buildings, 
                             output_tin_file_path = output_tin_file_path, 
                             dtm_buffer = dtm_buffer,
-                            dtm_module_path = dtm_module_path,
-                            density = density)
+                            dtm_module_path = dtm_module_path)
     print("Extracting annotations...")
     extract_annotations(area, data_folder, processed_data_folder, categories, 
                         features, features_output)
@@ -496,8 +506,7 @@ if __name__ == "__main__":
     parser.add_argument('--output_tin_file_path', type = any, default = None, help = 'File path of the DTM tin file to produce')
     parser.add_argument('--dtm_buffer', type = float, default = 6, help = 'Buffer (metres) around the DTM region to use')
     parser.add_argument('--dtm_module_path', type = str, default = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin", help = 'Path to the RoamesDTMGenerator module')
-    parser.add_argument('--density', type=float, default=1, help='Density to sample points at')
-    
+    parser.add_argument('--num_point', type = int, default = 7000, help = "Number of points to sample from a pointcloud tile")    
     args = parser.parse_args()
     
     process_data(args.base_dir, args.root_dir, args.pc_folder, args.data_folder, 
@@ -507,4 +516,4 @@ if __name__ == "__main__":
                 args.calc_agl, args.dtm_cell_size, args.desired_seed_cell_size,
                 args.boundary_block_width, args.detect_water,
                 args.remove_buildings, args.output_tin_file_path, 
-                args.dtm_buffer, args.dtm_module_path, args.density)
+                args.dtm_buffer, args.dtm_module_path, args.num_point)

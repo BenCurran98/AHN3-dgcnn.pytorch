@@ -2,7 +2,7 @@ import os
 from prepare_data.dtm import build_dtm, gen_agl
 from prepare_data.pointcloud_util import room2blocks
 import torch
-from data import FugroDataset_eval, pc_collate_test
+from data import FugroDataset_eval
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
@@ -18,7 +18,7 @@ UNCLASSIFIED = 31
 
 def test(k, io, 
             data_dir = "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
-            cell_size = 0.4641588833612779,
+            num_point = 7000,
             block_size = 30.0,
             num_classes = 5,
             num_features = 4,
@@ -64,9 +64,9 @@ def test(k, io,
     for test_area in [1]:
         test_area = str(test_area)
         if (test_area == 'all') or (test_area == test_area):
-            dataset = FugroDataset_eval(split='test', data_root=data_dir, cell_size = cell_size,
+            dataset = FugroDataset_eval(split='test', data_root=data_dir, num_point = num_point,
                                    block_size=block_size, use_all_points=use_all_points)
-            test_loader = DataLoader(dataset, batch_size=test_batch_size, collate_fn = pc_collate_test, shuffle=False, drop_last=False)
+            test_loader = DataLoader(dataset, batch_size=test_batch_size, shuffle=False, drop_last=False)
 
             room_idx = np.array(dataset.room_idxs)
 
@@ -197,7 +197,7 @@ def test_args(args, io):
         args.k,
         io,
         data_dir = args.data_dir,
-        cell_size = args.cell_size,
+        num_point = args.num_point,
         block_size = args.block_size,
         num_classes = args.num_classes,
         num_features = args.num_features,
@@ -216,7 +216,7 @@ def test_args(args, io):
 
 def predict(k, io, pointcloud_file,
             pred_pointcloud_file,
-            cell_size = 0.4641588833612779,
+            num_point = 7000,
             block_size = 30.0,
             num_classes = 5,
             num_features = 4,
@@ -251,11 +251,12 @@ def predict(k, io, pointcloud_file,
     dtm = build_dtm(data)
     agl = gen_agl(dtm, data)
 
-    data = np.hstack((data, np.reshape(agl, (len(agl), 1))))
+    # data = np.hstack((data, np.reshape(agl, (len(agl), 1))))
+    data[:, features["agl"]] = agl
 
     print(data[0:10, :])
 
-    block_data, _ = room2blocks(data, labels, cell_size = cell_size,
+    block_data, _ = room2blocks(data, labels, num_point = num_point,
                                 block_size = block_size,
                                 stride = block_size,
                                 random_sample =False,
@@ -280,17 +281,15 @@ def predict(k, io, pointcloud_file,
             n += 1
             X = X[:, :, np.newaxis]
             X = torch.tensor(X)
+            print(X.shape)
             X = X.permute(2, 1, 0).float()
+            # X = X.permute(0, 2, 1).float()
             print(X.shape)
 
-            # seg_pred = model(data)
-            # seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-            # seg_pred = softmax(seg_pred, dim = 2)
-            # vals, pred = seg_pred.max(dim = 2)
-
             logit_pred, _ = model(X)
+            # logit_pred = logit_pred.permute(0, 2, 1).contiguous()
+            logit_pred = softmax(logit_pred, dim = 1)
             logit_pred = logit_pred.permute(0, 2, 1).contiguous()
-            logit_pred = softmax(logit_pred, dim = 2)
             print(logit_pred[0, 0:100, :])
             probs, pred = logit_pred.max(dim = 2)
 
