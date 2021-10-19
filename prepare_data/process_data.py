@@ -84,7 +84,7 @@ def load_las_pointcloud(filename, features_output = [], features = {}, filter_no
     if filter_noise:
         kdtree = KDTree(data[:, 0:3], metric = "euclidean")
         dists, _ = kdtree.query(data[:, 0:3], k = 2)
-        good_idxs = np.where(dists[:, 1] < 1)[0]
+        good_idxs = np.where(dists[:, 1] < 0.1)[0]
         print("Filtered {} noise points".format(data.shape[0] - len(good_idxs)))
         data = data[good_idxs, :]
         labels = labels[good_idxs]
@@ -138,14 +138,16 @@ def load_pointcloud_dir(dir, outdir,
                         features_output = [],
                         features = {},
                         calc_agl = True,
-                        cell_size = 1, 
+                        dtm_cell_size = 1, 
                         desired_seed_cell_size = 90, 
                         boundary_block_width = 5, 
                         detect_water = False, 
                         remove_buildings = True, 
                         output_tin_file_path = None,
                         dtm_buffer = 6,
-                        dtm_module_path = "/media/ben//ExternalStorage/external/RoamesDtmGenerator/bin"):
+                        dtm_module_path = "/media/ben//ExternalStorage/external/RoamesDtmGenerator/bin",
+                        density = 1,
+                        use_all_points = False):
     """Load a set of pointclouds from a directory and save them in a txt file
 
     Args:
@@ -179,12 +181,12 @@ def load_pointcloud_dir(dir, outdir,
         print(whole_data.shape)
         data, labels = utils.room2blocks(whole_data, 
                                             whole_labels, 
-                                            10000, 
+                                            density = density, 
                                             block_size = block_size, 
                                             random_sample = False, 
                                             stride = block_size/2, 
                                             sample_num = sample_num, 
-                                            use_all_points = True)
+                                            use_all_points = use_all_points)
 
         print(data[0].shape)
 
@@ -198,7 +200,7 @@ def load_pointcloud_dir(dir, outdir,
                 if calc_agl and "agl" in features_output and "agl" in features.keys():
                     dtm = build_dtm(this_data, 
                                     module_path = dtm_module_path,
-                                    cell_size = cell_size,
+                                    cell_size = dtm_cell_size,
                                     desired_seed_cell_size = desired_seed_cell_size,
                                     boundary_block_width = boundary_block_width,
                                     detect_water = detect_water,
@@ -394,10 +396,10 @@ def write_npy_file_names(root_dir, data_path):
 def process_data(base_dir, root_folder, pc_folder, data_folder, 
                 processed_data_folder, npy_data_folder, area, categories_file, 
                 features_file, features_output, block_size, sample_num, 
-                min_class_num, class_map_file, calc_agl, cell_size, 
+                min_class_num, class_map_file, calc_agl, dtm_cell_size, 
                 desired_seed_cell_size, boundary_block_width, detect_water,
                 remove_buildings, output_tin_file_path, dtm_buffer,
-                dtm_module_path):
+                dtm_module_path, density):
     """Pre-process raw data for the classifier
 
     Args:
@@ -445,14 +447,15 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
                             features_output = features_output,
                             features = features,
                             calc_agl = calc_agl, 
-                            cell_size = cell_size, 
+                            dtm_cell_size = dtm_cell_size, 
                             desired_seed_cell_size = desired_seed_cell_size, 
                             boundary_block_width = boundary_block_width, 
                             detect_water = detect_water,
                             remove_buildings = remove_buildings, 
                             output_tin_file_path = output_tin_file_path, 
                             dtm_buffer = dtm_buffer,
-                            dtm_module_path = dtm_module_path)
+                            dtm_module_path = dtm_module_path,
+                            density = density)
     print("Extracting annotations...")
     extract_annotations(area, data_folder, processed_data_folder, categories, 
                         features, features_output)
@@ -485,7 +488,7 @@ if __name__ == "__main__":
     parser.add_argument('--sample_num', type = int, default = 5, help = 'Number of tile samples to take from each point cloud')
     parser.add_argument('--min_class_num', type = int, default = 100, help = 'Minimum number of points per class for the pointcloud to be used')
     parser.add_argument('--calc_agl', type = bool, default = True, help = 'Whether to calculate AGL for the pointcloud')
-    parser.add_argument('--cell_size', type = float, default = 1, help = 'Size of DTM cell')
+    parser.add_argument('--dtm_cell_size', type = float, default = 1, help = 'Size of DTM cell')
     parser.add_argument('--desired_seed_cell_size', type = int, default = 90, help = 'Size of DTM seed cell')
     parser.add_argument('--boundary_block_width', type = int, default = 5, help = 'Number of blocks to use on the boundary')
     parser.add_argument('--detect_water', type = bool, default = False, help = 'Whether to detect water in DTM generation')
@@ -493,7 +496,7 @@ if __name__ == "__main__":
     parser.add_argument('--output_tin_file_path', type = any, default = None, help = 'File path of the DTM tin file to produce')
     parser.add_argument('--dtm_buffer', type = float, default = 6, help = 'Buffer (metres) around the DTM region to use')
     parser.add_argument('--dtm_module_path', type = str, default = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin", help = 'Path to the RoamesDTMGenerator module')
-    
+    parser.add_argument('--density', type=float, default=1, help='Density to sample points at')
     
     args = parser.parse_args()
     
@@ -501,7 +504,7 @@ if __name__ == "__main__":
                 args.processed_data_folder, args.npy_data_folder, args.area, 
                 args.categories_file, args.features_file, args.features_output, 
                 args.block_size, args.sample_num, args.min_class_num, args.class_map_file,
-                args.calc_agl, args.cell_size, args.desired_seed_cell_size,
+                args.calc_agl, args.dtm_cell_size, args.desired_seed_cell_size,
                 args.boundary_block_width, args.detect_water,
                 args.remove_buildings, args.output_tin_file_path, 
-                args.dtm_buffer, args.dtm_module_path)
+                args.dtm_buffer, args.dtm_module_path, args.density)

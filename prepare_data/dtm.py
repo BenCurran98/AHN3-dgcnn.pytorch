@@ -40,8 +40,6 @@ def build_dtm(pc, module_path = "/media/ben/ExtraStorage/external/RoamesDtmGener
         is_dry_run (bool, optional): Whether to just generate the binary DTM file. Defaults to False.
     """
 
-    output_tin_file_path = os.path.join(os.getcwd(), "dtm")
-
     if pc.shape[0] == 0:
         warnings.warn("No points found in pointcloud!")
         return pc

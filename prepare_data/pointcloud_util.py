@@ -81,7 +81,7 @@ def sample_data_label(data, label, num_sample):
     return new_data, new_label
 
 
-def room2blocks(data, label, cell_size = 0.4641588833612779, block_size=1.0, stride=1.0,
+def room2blocks(data, label, density = 1, block_size=1.0, stride=1.0,
                 random_sample=False, sample_num=None, sample_aug=1, use_all_points=False):
     """ Prepare block training data.
     Args:
@@ -104,14 +104,16 @@ def room2blocks(data, label, cell_size = 0.4641588833612779, block_size=1.0, str
     """
     assert (stride <= block_size)
 
-    x_ub = np.amax(data[:, 0])
-    x_lb = np.amin(data[:, 0])
+    # add a buffer so we don't get edge pieces
+    x_ub = np.amax(data[:, 0]) - block_size
+    x_lb = np.amin(data[:, 0]) + block_size
     
-    y_ub = np.amax(data[:, 1])
-    y_lb = np.amin(data[:, 1])
+    y_ub = np.amax(data[:, 1]) - block_size
+    y_lb = np.amin(data[:, 1]) + block_size
 
-    z_ub = np.amax(data[:, 2])
-    z_lb = np.amin(data[:, 2])
+    mean_z = np.mean(data[:, 2])
+    z_lb = mean_z - 50
+    z_ub = mean_z + 50
 
     # Get the corner location for our sampling blocks    
     xbeg_list = []
@@ -170,26 +172,18 @@ def room2blocks(data, label, cell_size = 0.4641588833612779, block_size=1.0, str
             # split into cells of size cell size, select points to get density
             sample_points = []
             sample_labels = []
-            num_to_sample = int(np.ceil(1/(cell_size ** 3)))
-            num_block_z = int(np.ceil(z_ub - z_lb)/cell_size + 1)
-            num_blocks = int(np.ceil(block_size/cell_size))
-            for i in range(num_blocks):
-                for j in range(num_block_z):
-                    this_zcond = (block_data[:, 2] <= z_lb + (j + 1) * cell_size) & (block_data[:, 2] >= z_lb + cell_size * j)
-                    if len(np.where(this_zcond)[0]) == 0:
-                        continue
-                    this_xcond = (block_data[:, 0] <= xbeg + (i + 1) * cell_size) & (block_data[:, 0] >= xbeg + cell_size * i)
-                    this_ycond = (block_data[:, 1] <= ybeg + (i + 1) * cell_size) & (block_data[:, 1] >= ybeg + cell_size * i)
-                    
-                    this_cond = this_xcond & this_ycond & this_zcond
-                    these_points = block_data[this_cond, :]
-                    these_labels = block_label[this_cond]
-
-                    if these_points.shape[0] > 0:
-                        these_points_sampled, these_labels_sampled = \
-                            sample_data_label(these_points, these_labels, num_to_sample)
-                        sample_points.append(these_points_sampled)
-                        sample_labels.append(these_labels_sampled)
+            num_to_sample = int(np.ceil(density * (block_size ** 2)))
+            num_blocks = int(np.ceil(block_size))
+            num_block_z = int(np.ceil(z_ub - z_lb) + 1)
+            for i in range(num_block_z):
+                zcond = (block_data[:, 2] <= z_lb + i + 1) & (block_data[:, 2] >= z_lb + i)
+                these_points = block_data[zcond, :]
+                these_labels = block_label[zcond]
+                if these_points.shape[0] > 0:
+                    these_points_sampled, these_labels_sampled = \
+                        sample_data_label(these_points, these_labels, num_to_sample)
+                    sample_points.append(these_points_sampled)
+                    sample_labels.append(these_labels_sampled)
             if len(sample_points) > 0:
                 block_data_sampled = np.concatenate(sample_points, 0)
                 block_label_sampled = np.concatenate(sample_labels, 0)

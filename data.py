@@ -36,8 +36,8 @@ class FugroDataset(Dataset):
         Indicates if this is a training or test data set
     data_root : str
         Default location of the directory containing the data (default '')
-    cell_size : float
-        cell_size (num_point/metre^3) to sample points at (default 0.4641588833612779)
+    density : float
+        Density at which to sample points at (default 1)
     block_size : float
         Size of the blocks to subdivide a tile into (default 30.0)
     use_all_points : bool
@@ -50,12 +50,12 @@ class FugroDataset(Dataset):
         Number of blocks to randomly sample from each tile (default 5)
     """
     def __init__(self, split='train', data_root='',
-                    cell_size = 0.4641588833612779,
+                    density = 1,
                     block_size=30.0, use_all_points=False, test_prop = 0.2, 
                     classes = [0, 1, 2, 3, 4], sample_num = 5, class_min = 100,
                     n_tries = 10, fields = []):
         super().__init__()
-        self.cell_size = cell_size
+        self.density = density
         self.block_size = block_size
         self.use_all_points = use_all_points
         self.test_prop = test_prop
@@ -101,7 +101,7 @@ class FugroDataset(Dataset):
                     las.number_of_returns = points[:, 8]
 
                 las.classification = labels
-                
+
                 unique_labels = np.unique(labels)
                 
                 label_counts = [len(np.where(labels == c)[0]) for c in unique_labels]
@@ -112,14 +112,14 @@ class FugroDataset(Dataset):
                     found = 0
                     n = 0
                     while found < sample_num:
-                        block_points, block_labels = util.room2blocks(points, labels, cell_size = self.cell_size, block_size=self.block_size,
-                                                                stride=self.block_size/10, random_sample=True, sample_num=sample_num - found, use_all_points=self.use_all_points)
+                        block_points, block_labels = util.room2blocks(points, labels, density = self.density, block_size=self.block_size,
+                                                                stride=self.block_size/10, random_sample=True, sample_num=sample_num - found, use_all_points=True)
 
                         for i in range(len(block_points)):
                             this_block_points = block_points[i]
                             this_block_labels = block_labels[i]
                             label_counts = [len(np.where(this_block_labels == c)[0]) for c in classes]
-                            if all([c > class_min for c in label_counts]):
+                            if len(np.where([c > class_min for c in label_counts])[0]) > int(len(self.classes) * 0.6):
                                 found += 1
                                 room_idxs.extend([index])
                                 self.room_points.append(np.reshape(this_block_points, (1, this_block_points.shape[0], this_block_points.shape[1])))
@@ -153,16 +153,14 @@ class FugroDataset(Dataset):
                         las.write("../DataSampleTrain/{}_subsampled__block_data{}.las".format(split, index))
 
                 else:
-                    block_points, block_labels = util.room2blocks(points, labels, cell_size = self.cell_size, block_size=self.block_size,
-                                                                stride=self.block_size/3, random_sample=True, sample_num=sample_num, use_all_points=self.use_all_points)
+                    block_points, block_labels = util.room2blocks(points, labels, density = self.density, block_size=self.block_size,
+                                                                stride=self.block_size/3, random_sample=True, sample_num=sample_num, use_all_points=True)
                     room_idxs.extend([index] * int(len(block_points)))  # extend with number of blocks in a room
                     self.room_points.append(block_points), self.room_labels.append(block_labels)
                     num_point_all.append(labels.size)
 
                 t.set_postfix(num_samples = len(room_idxs))
                 t.update()
-        # self.room_points = np.concatenate(self.room_points)
-        # self.room_labels = np.concatenate(self.room_labels)
 
         self.room_idxs = np.array(room_idxs)
 
@@ -243,10 +241,10 @@ class FugroDataset(Dataset):
         return len(self.room_idxs)
 
 class FugroDataset_eval(Dataset):
-    def __init__(self, split='train', data_root='', cell_size = 0.4641588833612779, block_size=30.0, use_all_points=False):
+    def __init__(self, split='train', data_root='', density = 1, block_size=30.0, use_all_points=False):
         super().__init__()
         self.block_size = block_size
-        self.cell_size = cell_size
+        self.density = density
         
         self.use_all_points = use_all_points
         rooms = sorted(os.listdir(data_root))
@@ -266,8 +264,8 @@ class FugroDataset_eval(Dataset):
             points, labels = room_data[:, 0:-1], room_data[:, -1]
             coord_min, coord_max = np.amin(points, axis=0)[:3], np.amax(points, axis=0)[:3]
             self.room_coord_min.append(coord_min), self.room_coord_max.append(coord_max)
-            block_points, block_labels = util.room2blocks(points, labels, cell_size = self.cell_size, block_size=self.block_size,
-                                                       stride=self.block_size, random_sample=False, sample_num=None, use_all_points=self.use_all_points)
+            block_points, block_labels = util.room2blocks(points, labels, density = self.density, block_size=self.block_size,
+                                                       stride=self.block_size, random_sample=False, sample_num=None, use_all_points=True)
             f = open("../DataSampleTest/block_data{}.txt".format(index), "w")
             these_points = np.concatenate(block_points)
             for i in range(these_points.shape[0]):
