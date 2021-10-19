@@ -73,8 +73,6 @@ if __name__ == "__main__":
                         help='random seed (default: 1)')
     parser.add_argument('--eval', type=bool, default=False,
                         help='evaluate the model')
-    parser.add_argument('--cell_size', type=float, default=0.4641588833612779,
-                        help='cell_size to sample points at')
     parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout rate')
     parser.add_argument('--emb_dims', type=int, default=1024, metavar='N',
@@ -101,6 +99,8 @@ if __name__ == "__main__":
                         help = 'Label of model file')
     parser.add_argument('--min_class_confidence', type = float, default = 0.8, 
                         help = 'Minimum confidence value for the model to label a point as belonging to a class')
+    parser.add_argument('--density', type = float, default = 1.0, 
+                        help = 'Density to sample points at')
     args = parser.parse_args()
 
     _init_()
