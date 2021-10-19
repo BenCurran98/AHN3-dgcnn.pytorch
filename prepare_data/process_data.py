@@ -243,7 +243,7 @@ def load_pointcloud_dir(dir, outdir,
 
                 las.write(os.path.join(las_dir, "Area_{}.las".format(tile_num)))
                 class_counts = [len(np.where(this_labels == c)[0]) for c in classes]
-                if all([count > min_num for count in class_counts]):
+                if len([count > min_num for count in class_counts]) > np.ceil(0.6 * len(classes)):
                     np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(
                                             tile_num)), np.hstack((this_data, 
                                             np.reshape(this_labels, 
