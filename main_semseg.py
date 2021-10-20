@@ -35,19 +35,8 @@ if __name__ == "__main__":
                         help='Directory of data')
     parser.add_argument('--tb_dir', type=str, default='log_tensorboard',
                         help='Directory of tensorboard logs')
-    parser.add_argument('--exp_name', type=str, default='dgcnn_test_30epochs_p100', metavar='N',
+    parser.add_argument('--exp_name', type=str, default='dgcnn_test_100epochs_4classes', metavar='N',
                         help='Name of the experiment')
-    parser.add_argument('--model', type=str, default='dgcnn', metavar='N',
-                        choices=['dgcnn'],
-                        help='Model to use, [dgcnn]')
-    parser.add_argument('--dataset', type=str, default='S3DIS', metavar='N',
-                        choices=['S3DIS'])
-    parser.add_argument('--block_size', type=float, default=30.0,
-                        help='size of one block')
-    parser.add_argument('--num_classes', type=int, default=5,
-                        help='number of classes in the dataset')
-    parser.add_argument('--num_features', type=int, default=3,
-                        help='Number of pointcloud feature columns in data')
     parser.add_argument('--test_area', type=str, default='4', metavar='N',
                         choices=['1', '2', '3', '4', 'all'])
     parser.add_argument('--batch_size', type=int, default=12, metavar='batch_size',
@@ -56,8 +45,10 @@ if __name__ == "__main__":
                         help='Size of batch)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of episode to train ')
-    parser.add_argument('--use_all_points', type=bool, default=False, metavar='N',
-                        help='Whether to use all points in block')
+    parser.add_argument('--num_classes', type=int, default=5,
+                        help='number of classes in the dataset')
+    parser.add_argument('--num_features', type=int, default=3,
+                        help='Number of pointcloud feature columns in data')
     parser.add_argument('--use_sgd', type=bool, default=False,
                         help='Use SGD')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
@@ -67,7 +58,7 @@ if __name__ == "__main__":
     parser.add_argument('--scheduler', type=str, default='cos', metavar='N',
                         choices=['cos', 'step'],
                         help='Scheduler to use, [cos, step]')
-    parser.add_argument('--no_cuda', type=bool, default=False,
+    parser.add_argument('--cuda', type=bool, default=False,
                         help='enables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
@@ -81,25 +72,20 @@ if __name__ == "__main__":
                         help='Num of nearest neighbors to use')
     parser.add_argument('--model_root', type=str, default='checkpoints/RGB_30m/models', metavar='N',
                         help='Pretrained model root')
-    parser.add_argument('--test_visu_dir', default='predict',
-                        help='Directory of test visualization files.')
-    parser.add_argument('--test_prop', type=float, default = 0.2, metavar = 'N',
-                        help = 'Proportion of data to use for testing')
-    parser.add_argument('--sample_num', type=int, default = 5, metavar = 'N',
-                        help = 'Number of training blocks to randomly sample')
+    parser.add_argument('--pred_dir', default='predict',
+                        help='Directory of prediction files.')
+    parser.add_argument('--validation_prop', type=float, default = 0.2, metavar = 'N',
+                        help = 'Proportion of data to use for validation/testing')
     parser.add_argument('--num_threads', type=int, default = 8, metavar = 'N',
                         help = 'Number of threads to use for training')
     parser.add_argument('--num_interop_threads', type=int, default = 2, metavar = 'N',
                         help = 'Number of threads to use for inter-operations in pytorch')
     parser.add_argument('--exclude_classes', nargs = "*", type=int, default = -1, metavar = 'N',
                         help = 'Class labels to ignore in training')
-    parser.add_argument('--min_class_num', type = int, default = 100, 
-                        help = 'Minimum number of points per class for the pointcloud to be used')
     parser.add_argument('--model_label', type = str, default = "dgcnn_model", 
                         help = 'Label of model file')
     parser.add_argument('--min_class_confidence', type = float, default = 0.8, 
                         help = 'Minimum confidence value for the model to label a point as belonging to a class')
-    parser.add_argument('--num_point', type = int, default = 7000, help = "Number of points to sample from a pointcloud tile")    
 
     args = parser.parse_args()
 
@@ -108,7 +94,7 @@ if __name__ == "__main__":
     io = IOStream('checkpoints/' + args.exp_name + '/run.log')
     io.cprint(str(args))
 
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
+    args.cuda = args.cuda and torch.cuda.is_available()
     torch.manual_seed(args.seed)
     if args.cuda:
         io.cprint(

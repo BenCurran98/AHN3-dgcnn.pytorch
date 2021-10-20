@@ -164,7 +164,9 @@ def load_pointcloud_dir(dir, outdir,
     with open(class_map_file, "r") as f:
         class_map = json.load(f)
     class_map = {int(k): v for (k, v) in class_map.items()}
-    classes = [k for k in class_map.values()]
+    classes = [k for k in np.unique(list(class_map.values()))]
+
+    print("CLASSES: ", classes)
 
     data_batch_list, label_batch_list = [], []
     files = os.listdir(dir)
@@ -243,7 +245,8 @@ def load_pointcloud_dir(dir, outdir,
 
                 las.write(os.path.join(las_dir, "Area_{}.las".format(tile_num)))
                 class_counts = [len(np.where(this_labels == c)[0]) for c in classes]
-                if len([count > min_num for count in class_counts]) > np.ceil(0.6 * len(classes)):
+                len(np.where([count > min_num for count in class_counts])[0])
+                if len(np.where([count > min_num for count in class_counts])[0]) > np.ceil(0.75 * len(classes)):
                     np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(
                                             tile_num)), np.hstack((this_data, 
                                             np.reshape(this_labels, 

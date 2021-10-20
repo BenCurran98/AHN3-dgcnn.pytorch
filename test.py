@@ -2,14 +2,13 @@ import os
 from prepare_data.dtm import build_dtm, gen_agl
 from prepare_data.pointcloud_util import room2blocks
 import torch
-from data import FugroDataset_eval
+from data import FugroDataset
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
 from util import *
-from prepare_data.process_data import load_pointcloud, save_las_pointcloud
+from prepare_data.process_data import load_pointcloud, save_las_pointcloud, convert_pc_labels
 import sklearn.metrics as metrics
-from torch.utils.tensorboard import SummaryWriter
 from torch.nn.functional import softmax
 from tqdm import tqdm
 from dtm import *
@@ -18,14 +17,11 @@ UNCLASSIFIED = 31
 
 def test(k, io, 
             data_dir = "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
-            num_point = 7000,
-            block_size = 30.0,
             num_classes = 5,
             num_features = 4,
             test_batch_size = 8,
             dropout = 0.5,
             emb_dims = 1024,
-            use_all_points = False,
             cuda = False,
             min_class_confidence = 0.8,
             model_label = "dgcnn_model",
@@ -39,13 +35,10 @@ def test(k, io,
         k (int): Number of neighbours to calculate in feature spaces
         io (IOStream): Stream where log data is sent to
         data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY".
-        num_points (int, optional): Number of points to sample from each block. Defaults to 5000.
-        block_size (float, optional): Size of blocks to sample from each tile. Defaults to 30.0.
         num_classes (int, optional): Number of classes to train on. Defaults to 5.
         test_batch_size (int, optional): Number of test samples in each batch. Defaults to 8.
         dropout (float, optional): Dropout probability for dropout layer in model. Defaults to 0.5.
         emb_dims (int, optional): Dimensions to embed the global feature space into. Defaults to 1024.
-        use_all_points (bool, optional): Whether to use all points in a block or to subsample. Defaults to False.
         cuda (bool, optional): Whether to use CUDA device for training. Defaults to False.
         min_class_confidence (float, optional): Minimum confidence value for the model to label a point as belonging to a class
         model_label (str, optional): Label to assign to the model for IO purposes. Defaults to "dgcnn_model".
@@ -59,14 +52,17 @@ def test(k, io,
     torch.set_num_interop_threads(num_interop_threads)
     all_true_cls = []
     all_pred_cls = []
-    all_true_seg = []
-    all_pred_seg = []
+    all_true_labels = []
+    all_pred_labels = []
     for test_area in [1]:
         test_area = str(test_area)
         if (test_area == 'all') or (test_area == test_area):
-            dataset = FugroDataset_eval(split='test', data_root=data_dir, num_point = num_point,
-                                   block_size=block_size, use_all_points=use_all_points)
-            test_loader = DataLoader(dataset, batch_size=test_batch_size, shuffle=False, drop_last=False)
+            dataset = FugroDataset(split='test', data_root=data_dir, 
+                                    validation_prop = 1.0, 
+                                    classes = range(num_classes))
+            test_loader = DataLoader(dataset, 
+                                        batch_size=test_batch_size, 
+                                        shuffle=False, drop_last=False)
 
             room_idx = np.array(dataset.room_idxs)
 
@@ -88,7 +84,8 @@ def test(k, io,
 
             io.cprint('Start overall evaluation...')
 
-            model = DGCNN(num_classes, num_features, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
+            model = DGCNN(num_classes, num_features, k, 
+                            dropout = dropout, emb_dims = emb_dims, cuda = cuda)
 
             if cuda:
                 checkpoint = torch.load(os.path.join(model_root, '%s.t7' % model_label))
@@ -104,42 +101,40 @@ def test(k, io,
             io.cprint('%s.t7 restored.' % model_label)
 
             test_acc = 0.0
-            count = 0.0
             test_true_cls = []
             test_pred_cls = []
-            test_true_seg = []
-            test_pred_seg = []
+            test_true_labels = []
+            test_pred_labels = []
 
             io.cprint('Start testing ...')
             num_batch = 0
             
             with tqdm(test_loader, desc = "Testing") as t:
-                for data, seg in test_loader:
-                    data, seg = data.to(device), seg.to(device)
+                for data, labels in test_loader:
+                    data, labels = data.to(device), labels.to(device)
                     data = data.permute(0, 2, 1).float()
                     batch_size = data.size()[0]
 
-                    seg_pred, _ = model(data)
-                    seg_pred = softmax(seg_pred, dim = 2)
-                    seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-                    vals, pred = seg_pred.max(dim = 2)
-                    # vals = seg_pred.amax(dim = 2)
+                    labels_pred, _ = model(data)
+                    labels_pred = softmax(labels_pred, dim = 2)
+                    labels_pred = labels_pred.permute(0, 2, 1).contiguous()
+                    vals, pred = labels_pred.max(dim = 2)
+                    # vals = labels_pred.amax(dim = 2)
                     pred[torch.where(vals < min_class_confidence)] = UNCLASSIFIED
-                    seg_np = seg.cpu().numpy()
+                    labels_np = labels.cpu().numpy()
                     pred_np = pred.detach().cpu().numpy()
-                    test_true_cls.append(seg_np.reshape(-1))
+                    test_true_cls.append(labels_np.reshape(-1))
                     test_pred_cls.append(pred_np.reshape(-1))
-                    test_true_seg.append(seg_np)
-                    test_pred_seg.append(pred_np)
+                    test_true_labels.append(labels_np)
+                    test_pred_labels.append(pred_np)
 
                     # write prediction results
                     for batch_id in range(batch_size):
                         pts = data[batch_id, :, :]
                         
                         pts = pts.permute(1, 0).float()
-                        l = seg[batch_id, :]
+                        l = labels[batch_id, :]
                         pred_ = pred[batch_id, :]
-                        logits = seg_pred[batch_id, :, :]
                         # compute room_id
                         room_id = room_idx[num_batch + batch_id]
                         for i in range(pts.shape[0]):
@@ -151,8 +146,8 @@ def test(k, io,
                     num_batch += batch_size
                     torch.cuda.empty_cache()
 
-                    balanced_acc = metrics.balanced_accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
-                    acc = metrics.accuracy_score(seg_np.reshape(-1), pred_np.reshape(-1))
+                    balanced_acc = metrics.balanced_accuracy_score(labels_np.reshape(-1), pred_np.reshape(-1))
+                    acc = metrics.accuracy_score(labels_np.reshape(-1), pred_np.reshape(-1))
                     t.set_postfix(A = acc, BA = balanced_acc)
                     t.update()
 
@@ -176,17 +171,17 @@ def test(k, io,
 
             all_true_cls.append(test_true_cls)
             all_pred_cls.append(test_pred_cls)
-            all_true_seg.append(test_true_seg)
-            all_pred_seg.append(test_pred_seg)
+            all_true_labels.append(test_true_labels)
+            all_pred_labels.append(test_pred_labels)
 
     if test_area == 'all':
         all_true_cls = np.concatenate(all_true_cls)
         all_pred_cls = np.concatenate(all_pred_cls)
         all_acc = metrics.accuracy_score(all_true_cls, all_pred_cls)
         avg_per_class_acc = metrics.balanced_accuracy_score(all_true_cls, all_pred_cls)
-        all_true_seg = np.concatenate(all_true_seg, axis=0)
-        all_pred_seg = np.concatenate(all_pred_seg, axis=0)
-        all_ious = calculate_sem_IoU(all_pred_seg, all_true_seg, num_classes)
+        all_true_labels = np.concatenate(all_true_labels, axis=0)
+        all_pred_labels = np.concatenate(all_pred_labels, axis=0)
+        all_ious = calculate_sem_IoU(all_pred_labels, all_true_labels, num_classes)
         outstr = 'Overall Test :: test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (all_acc,
                                                                                          avg_per_class_acc,
                                                                                          np.mean(all_ious))
@@ -197,21 +192,18 @@ def test_args(args, io):
         args.k,
         io,
         data_dir = args.data_dir,
-        num_point = args.num_point,
-        block_size = args.block_size,
         num_classes = args.num_classes,
         num_features = args.num_features,
         test_batch_size = args.test_batch_size,
         dropout = args.dropout,
         emb_dims = args.emb_dims,
-        use_all_points = args.use_all_points,
         cuda = args.cuda,
         min_class_confidence = args.min_class_confidence,
         model_label = args.model_label, 
         num_threads = args.num_threads, 
         num_interop_threads = args.num_interop_threads,
         model_root = args.model_root,
-        pred_dir = args.test_visu_dir
+        pred_dir = args.pred_dir
     )
 
 def predict(k, io, pointcloud_file,
@@ -226,6 +218,7 @@ def predict(k, io, pointcloud_file,
             min_class_confidence = 0.8,
             model_label = "dgcnn_model",
             model_root = "checkpoints/dgcnn",
+            class_map_file = "params/class_map-4.json",
             features_output = [], 
             features = {}):
     
@@ -246,15 +239,15 @@ def predict(k, io, pointcloud_file,
 
     data, labels = load_pointcloud(pointcloud_file, features_output = features_output, features = features)
 
-    print(data[0:10, :])
+    data, labels = convert_pc_labels(data, 
+                                        labels, 
+                                        class_map_file = class_map_file)
 
     dtm = build_dtm(data)
     agl = gen_agl(dtm, data)
 
     # data = np.hstack((data, np.reshape(agl, (len(agl), 1))))
     data[:, features["agl"]] = agl
-
-    print(data[0:10, :])
 
     block_data, _ = room2blocks(data, labels, num_point = num_point,
                                 block_size = block_size,

@@ -10,3 +10,6 @@ tensorboard_logs/*
 log_tensorboard
 *.txt
 *.las
+*.txt
+*.toml
+*.jl
