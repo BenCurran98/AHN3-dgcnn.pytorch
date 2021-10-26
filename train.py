@@ -18,13 +18,11 @@ from tqdm import tqdm
 def train(k, io, 
             data_dir = "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
             num_points = 7000,
-            block_size = 30.0,
             epochs = 30,
             num_classes = 5,
             num_features = 4,
             train_batch_size = 8,
             validation_batch_size = 8,
-            min_class_num = 20,
             use_sgd = False,
             lr = 0.001,
             momentum = 0.9,
@@ -54,7 +52,6 @@ def train(k, io,
         num_classes (int, optional): Number of classes to train on. Defaults to 5.
         train_batch_size (int, optional): Number of training samples in each batch. Defaults to 8.
         validation_batch_size (int, optional): Number of test samples in each batch. Defaults to 8.
-        min_class_num (int, optional): Minimum number of points per class for a block to be used. Defaults to 100.
         use_sgd (bool, optional): Indicates whether to use Stochastic Gradient Descent as an optimiser. Defaults to False.
         lr (float, optional): Learning rate of optimiser. Defaults to 0.001.
         momentum (float, optional): Momentum of optimiser (only used for SGD). Defaults to 0.9.
@@ -332,13 +329,11 @@ def train_args(args, io):
         io,
         data_dir = args.data_dir,
         num_points = args.num_points,
-        block_size = args.block_size,
         epochs = args.epochs,
         num_classes = args.num_classes,
         num_features = args.num_features,
         train_batch_size = args.batch_size,
         validation_batch_size = args.validation_batch_size,
-        min_class_num = args.min_class_num,
         use_sgd = args.use_sgd,
         lr = args.lr,
         momentum = args.momentum,

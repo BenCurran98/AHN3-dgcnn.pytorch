@@ -13,9 +13,6 @@ import pointcloud_util as utils
 from dtm import build_dtm, gen_agl
 from sklearn.neighbors import NearestNeighbors, KDTree
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-CLASS_MAP_FILE = os.path.join(ROOT_DIR, "params", "class_map.json")
-
 def load_h5_pointcloud(filename, features_output = [], features = {}):
     """Load a pointcloud in HDF5 format from `filename`"""
     file = h5py.File(filename, 'r+')
@@ -95,7 +92,7 @@ def load_pointcloud(filename, features_output = [], features = {}, filter_noise 
     if filter_noise:
         kdtree = KDTree(data[:, 0:3], metric = "euclidean")
         dists, _ = kdtree.query(data[:, 0:3], k = 2)
-        good_idxs = np.where(dists[:, 1] < 0.1)[0]
+        good_idxs = np.where(dists[:, 1] < 1.0)[0]
         print("Filtered {} noise points".format(data.shape[0] - len(good_idxs)))
         data = data[good_idxs, :]
         labels = labels[good_idxs]
@@ -219,19 +216,18 @@ def load_pointcloud_dir(dir, outdir,
                 while found < sample_num:
                     block_points, block_labels = utils.room2blocks(this_data, this_labels, num_points, block_size=sub_block_size,
                                                             stride=sub_block_size/2, random_sample=True, sample_num=sub_sample_num - found, use_all_points=use_all_points)
-                    for i in range(block_points.shape[0]):
-                        this_block_points = block_points[i, :, :]
-                        this_block_labels = block_labels[i, :]
+                    for i in range(len(block_points)):
+                        this_block_points = block_points[i]
+                        this_block_labels = block_labels[i]
                         label_counts = [len(np.where(this_block_labels == c)[0]) for c in classes]
                         if all([c > min_num * ((sub_block_size ** 2)/(block_size ** 2)) for c in label_counts]):
                             found += 1
-                            las.write(os.path.join(las_dir, "Area_{}.las".format(tile_num)))
                             las = laspy.create(file_version = "1.2", point_format = 3) 
 
-                            las.x = this_block_points[:, 0]
-                            las.y = this_block_points[:, 1]
+                            las.x = this_block_points[:, 0].astype(float)
+                            las.y = this_block_points[:, 1].astype(float)
                             current_idx = 2 if not calc_agl else 3
-                            las.z = this_block_points[:, current_idx]
+                            las.z = this_block_points[:, current_idx].astype(float)
                             current_idx += 1
                             las.classification = this_block_labels
                             if "red" in features_output:
@@ -250,6 +246,7 @@ def load_pointcloud_dir(dir, outdir,
                             if "number_of_returns" in features_output:
                                 las.number_of_returns = this_block_points[:, current_idx]
                                 current_idx += 1
+                            las.write(os.path.join(las_dir, "Area_{}.las".format(tile_num)))
                             np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(
                                         tile_num)), np.hstack((this_block_points, 
                                         np.reshape(this_block_labels, 
@@ -483,54 +480,3 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
     collect_3d_data(root_folder, npy_data_folder)
     print("Writitng NPY data...")
     write_npy_file_names(root_folder, npy_data_folder)
-
-
-if __name__ == "__main__":
-    AREA = 'Training'
-    PC_DIR = os.path.join(os.getcwd(), '..' '/Datasets', 'QualityTraining-orig')
-    BASE_DIR = os.path.join(os.getcwd(), '..' '/Datasets')
-    ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-    parser = argparse.ArgumentParser(description='Extract point cloud data')
-    parser.add_argument('--base_dir', type = str, default = os.path.join(BASE_DIR, AREA), help = 'Base directory of data')
-    parser.add_argument('--root_dir', type = str, default = ROOT_DIR, help = 'Root directory of the files')
-    parser.add_argument('--area', type = str, default = AREA, help = 'Name of area to process')
-    parser.add_argument('--pc_folder', type = str, default = PC_DIR)
-    parser.add_argument('--data_folder', type = str, default = os.path.join(BASE_DIR, AREA, "Data"), help = 'Folder containing the complete datasets')
-    parser.add_argument('--processed_data_folder', type = str, default = os.path.join(BASE_DIR, AREA, "processed"), help = 'Folder containing the complete datasets')
-    parser.add_argument('--categories_file', type = str, default = 'params/categories.json', help = 'JSON file containing label mappings')
-    parser.add_argument('--features_file', type = str, default = 'params/features.json', help = 'JSON file containing index mappings of LiDAR features')
-    parser.add_argument('--class_map_file', type = str, default = CLASS_MAP_FILE, help = 'File containing class mappings')
-    parser.add_argument('--features_output', nargs = '*', type = str, default = ["x", "y", "z", "agl"], help = 'LiDAR features to extract')
-    parser.add_argument('--npy_data_folder', type = str, default = os.path.join(BASE_DIR, 'data_as_S3DIS_NRI_NPY'), help = 'Output folder of the data summary')
-    parser.add_argument('--block_size', type = int, default = 100, help = 'Size of blocks to divide pointclouds into')
-    parser.add_argument('--sample_num', type = int, default = 5, help = 'Number of tile samples to take from each point cloud')
-    parser.add_argument('--min_class_num', type = int, default = 100, help = 'Minimum number of points per class for the pointcloud to be used')
-    parser.add_argument('--calc_agl', type = bool, default = True, help = 'Whether to calculate AGL for the pointcloud')
-    parser.add_argument('--cell_size', type = int, default = 1, help = 'Size of DTM cell')
-    parser.add_argument('--desired_seed_cell_size', type = int, default = 90, help = 'Size of DTM seed cell')
-    parser.add_argument('--boundary_block_width', type = int, default = 5, help = 'Number of blocks to use on the boundary')
-    parser.add_argument('--detect_water', type = bool, default = False, help = 'Whether to detect water in DTM generation')
-    parser.add_argument('--remove_buildings', type = bool, default = True, help = 'Whether to remove buildings in DTM generation')
-    parser.add_argument('--output_tin_file_path', type = any, default = None, help = 'File path of the DTM tin file to produce')
-    parser.add_argument('--dtm_buffer', type = float, default = 6, help = 'Buffer (metres) around the DTM region to use')
-    parser.add_argument('--dtm_module_path', type = str, default = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin", help = 'Path to the RoamesDTMGenerator module')
-    parser.add_argument('--num_points', type = int, default = 7000, help = 'Number of points to subsample from each sub tile')
-    parser.add_argument('--sub_block_size', type = float, default = 30, help = 'Size of sub blocks that each tile is broken into')
-    parser.add_argument('--use_all_points', type = bool, default = False, help = 'Whether or not to use all points in each sub block')
-    parser.add_argument('--sub_sample_num', type = int, default = 5, help = 'Number of sub tile samples to take from each tile')
-    parser.add_argument('--n_tries', type = int, default = 10, help = 'Number of searches to perform for suitable sub tiles')
-
-
-    
-    args = parser.parse_args()
-    
-    process_data(args.base_dir, args.root_dir, args.pc_folder, args.data_folder, 
-                args.processed_data_folder, args.npy_data_folder, args.area, 
-                args.categories_file, args.features_file, args.features_output, 
-                args.block_size, args.sample_num, args.min_class_num, args.class_map_file,
-                args.calc_agl, args.cell_size, args.desired_seed_cell_size,
-                args.boundary_block_width, args.detect_water,
-                args.remove_buildings, args.output_tin_file_path, 
-                args.dtm_buffer, args.dtm_module_path, args.num_points,
-                args.sub_block_size, args.use_all_points, args.sub_sample_num,
-                args.n_tries)
