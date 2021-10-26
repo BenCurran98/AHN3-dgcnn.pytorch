@@ -85,7 +85,7 @@ if __name__ == "__main__":
                         help='Pretrained model root')
     parser.add_argument('--test_visu_dir', default='predict',
                         help='Directory of test visualization files.')
-    parser.add_argument('--test_prop', type=float, default = 0.2, metavar = 'N',
+    parser.add_argument('--validation_prop', type=float, default = 0.2, metavar = 'N',
                         help = 'Proportion of data to use for testing')
     parser.add_argument('--sample_num', type=int, default = 5, metavar = 'N',
                         help = 'Number of training blocks to randomly sample')

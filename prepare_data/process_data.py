@@ -1,16 +1,17 @@
 import os
 import glob
+from re import M
 from shutil import Error
 import numpy as np
 import json
 import h5py
 import gc
-from numpy.core.shape_base import hstack
 import laspy
 from tqdm import tqdm
 import argparse
 import pointcloud_util as utils
 from dtm import build_dtm, gen_agl
+from sklearn.neighbors import NearestNeighbors, KDTree
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 CLASS_MAP_FILE = os.path.join(ROOT_DIR, "params", "class_map.json")
@@ -44,7 +45,13 @@ def load_las_pointcloud(filename, features_output = [], features = {}):
     """Load a pointcloud in LAS format from `filename`"""
     file = laspy.read(filename)
 
-    features_output = [f for f in features_output if f in features.keys()]
+    avail_fields = [f.name for f in file.header.point_format]
+
+    features_output = [f for f in features_output if f in features.keys() and 
+                            (f in avail_fields or 
+                                f.lower() in avail_fields or 
+                                f.upper() in avail_fields
+                                or f == "agl")]
 
     if any(["x" not in features_output, 
             "y" not in features_output, 
@@ -76,14 +83,24 @@ def load_las_pointcloud(filename, features_output = [], features = {}):
 
     return data, labels
 
-def load_pointcloud(filename, features_output = [], features = {}):
+def load_pointcloud(filename, features_output = [], features = {}, filter_noise = True):
     """Load a pointcloud from a `filename"""
     if filename.split('.')[-1] == 'h5':
-        return load_h5_pointcloud(filename, features_output = features_output, features = features)
+        data, labels = load_h5_pointcloud(filename, features_output = features_output, features = features)
     elif filename.split('.')[-1] == 'las':
-        return load_las_pointcloud(filename, features_output = features_output, features = features)
+        data, labels = load_las_pointcloud(filename, features_output = features_output, features = features)
     else:
         raise Exception('Unsupported file type!')
+
+    if filter_noise:
+        kdtree = KDTree(data[:, 0:3], metric = "euclidean")
+        dists, _ = kdtree.query(data[:, 0:3], k = 2)
+        good_idxs = np.where(dists[:, 1] < 0.1)[0]
+        print("Filtered {} noise points".format(data.shape[0] - len(good_idxs)))
+        data = data[good_idxs, :]
+        labels = labels[good_idxs]
+
+    return data, labels
 
 def save_las_pointcloud(data, labels, filename, features_output = [], features = {}):
     """Save a pointcloud in LAS format into `filename`
@@ -130,7 +147,12 @@ def load_pointcloud_dir(dir, outdir,
                         remove_buildings = True, 
                         output_tin_file_path = None,
                         dtm_buffer = 6,
-                        dtm_module_path = "/media/ben//ExternalStorage/external/RoamesDtmGenerator/bin"):
+                        dtm_module_path = "/media/ben//ExternalStorage/external/RoamesDtmGenerator/bin",
+                        num_points = 7000,
+                        sub_block_size = 30,
+                        use_all_points = False,
+                        sub_sample_num = 10,
+                        n_tries = 10):
     """Load a set of pointclouds from a directory and save them in a txt file
 
     Args:
@@ -144,7 +166,9 @@ def load_pointcloud_dir(dir, outdir,
     with open(class_map_file, "r") as f:
         class_map = json.load(f)
     class_map = {int(k): v for (k, v) in class_map.items()}
-    classes = [k for k in class_map.values()]
+    classes = [k for k in np.unique(list(class_map.values()))]
+
+    print("CLASSES: ", classes)
 
     data_batch_list, label_batch_list = [], []
     files = os.listdir(dir)
@@ -161,7 +185,7 @@ def load_pointcloud_dir(dir, outdir,
 
         data, labels = utils.room2blocks(whole_data, 
                                             whole_labels, 
-                                            10000, 
+                                            100000, 
                                             block_size = block_size, 
                                             random_sample = False, 
                                             stride = block_size/2, 
@@ -189,46 +213,57 @@ def load_pointcloud_dir(dir, outdir,
                     agl = gen_agl(dtm, this_data)
 
                     this_data[:, features["agl"]] = agl
-                    # this_data = np.hstack((this_data, np.reshape(agl, (agl.shape[0], 1))))
 
-                las = laspy.create(file_version = "1.2", point_format = 3) 
+                found = 0
+                n = 0
+                while found < sample_num:
+                    block_points, block_labels = utils.room2blocks(this_data, this_labels, num_points, block_size=sub_block_size,
+                                                            stride=sub_block_size/2, random_sample=True, sample_num=sub_sample_num - found, use_all_points=use_all_points)
+                    for i in range(block_points.shape[0]):
+                        this_block_points = block_points[i, :, :]
+                        this_block_labels = block_labels[i, :]
+                        label_counts = [len(np.where(this_block_labels == c)[0]) for c in classes]
+                        if all([c > min_num * ((sub_block_size ** 2)/(block_size ** 2)) for c in label_counts]):
+                            found += 1
+                            las.write(os.path.join(las_dir, "Area_{}.las".format(tile_num)))
+                            las = laspy.create(file_version = "1.2", point_format = 3) 
 
-                las.x = this_data[:, 0]
-                las.y = this_data[:, 1]
-                current_idx = 2 if not calc_agl else 3
-                las.z = this_data[:, current_idx]
-                current_idx += 1
-                las.classification = this_labels
-                if "red" in features_output:
-                    las.red = this_data[:, current_idx]
-                if "green" in features_output:
-                    las.green = this_data[:, current_idx + 1]
-                if "blue" in features_output:
-                    las.blue = this_data[:, current_idx + 2]
-                    current_idx += 3
-                if "intensity" in features_output:
-                    las.intensity = this_data[:, current_idx]
-                    current_idx += 1
-                if "return_number" in features_output:
-                    las.return_number = this_data[:, current_idx]
-                    current_idx += 1
-                if "number_of_returns" in features_output:
-                    las.number_of_returns = this_data[:, current_idx]
-                    current_idx += 1
+                            las.x = this_block_points[:, 0]
+                            las.y = this_block_points[:, 1]
+                            current_idx = 2 if not calc_agl else 3
+                            las.z = this_block_points[:, current_idx]
+                            current_idx += 1
+                            las.classification = this_block_labels
+                            if "red" in features_output:
+                                las.red = this_block_points[:, current_idx]
+                            if "green" in features_output:
+                                las.green = this_block_points[:, current_idx + 1]
+                            if "blue" in features_output:
+                                las.blue = this_block_points[:, current_idx + 2]
+                                current_idx += 3
+                            if "intensity" in features_output:
+                                las.intensity = this_block_points[:, current_idx]
+                                current_idx += 1
+                            if "return_number" in features_output:
+                                las.return_number = this_block_points[:, current_idx]
+                                current_idx += 1
+                            if "number_of_returns" in features_output:
+                                las.number_of_returns = this_block_points[:, current_idx]
+                                current_idx += 1
+                            np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(
+                                        tile_num)), np.hstack((this_block_points, 
+                                        np.reshape(this_block_labels, 
+                                                (len(this_block_labels), 1)))))
+                
+                            data_batch_list.append(this_block_points)
+                            label_batch_list.append(this_block_labels)
+                            tile_num += 1
+                            num_good += 1
+                    n += 1
 
-                las.write(os.path.join(las_dir, "Area_{}.las".format(tile_num)))
-                class_counts = [len(np.where(this_labels == c)[0]) for c in classes]
-                if all([count > min_num for count in class_counts]):
-                    np.savetxt(os.path.join(outdir, 'Area_{}.txt'.format(
-                                            tile_num)), np.hstack((this_data, 
-                                            np.reshape(this_labels, 
-                                                    (len(this_labels), 1)))))
-                    
-                    data_batch_list.append(this_data)
-                    label_batch_list.append(this_labels)
-                    tile_num += 1
-                    num_good += 1
-                    t.set_postfix(num_good = num_good)
+                    if n > n_tries:
+                        break
+                
                 t.update()
                 gc.collect()
     
@@ -377,7 +412,8 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
                 min_class_num, class_map_file, calc_agl, cell_size, 
                 desired_seed_cell_size, boundary_block_width, detect_water,
                 remove_buildings, output_tin_file_path, dtm_buffer,
-                dtm_module_path):
+                dtm_module_path, num_points, sub_block_size, use_all_points,
+                sub_sample_num, n_tries):
     """Pre-process raw data for the classifier
 
     Args:
@@ -432,7 +468,12 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
                             remove_buildings = remove_buildings, 
                             output_tin_file_path = output_tin_file_path, 
                             dtm_buffer = dtm_buffer,
-                            dtm_module_path = dtm_module_path)
+                            dtm_module_path = dtm_module_path,
+                            num_points = num_points,
+                            sub_block_size = sub_block_size,
+                            use_all_points = use_all_points,
+                            sub_sample_num = sub_sample_num,
+                            n_tries = n_tries)
     print("Extracting annotations...")
     extract_annotations(area, data_folder, processed_data_folder, categories, 
                         features, features_output)
@@ -473,7 +514,13 @@ if __name__ == "__main__":
     parser.add_argument('--output_tin_file_path', type = any, default = None, help = 'File path of the DTM tin file to produce')
     parser.add_argument('--dtm_buffer', type = float, default = 6, help = 'Buffer (metres) around the DTM region to use')
     parser.add_argument('--dtm_module_path', type = str, default = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin", help = 'Path to the RoamesDTMGenerator module')
-    
+    parser.add_argument('--num_points', type = int, default = 7000, help = 'Number of points to subsample from each sub tile')
+    parser.add_argument('--sub_block_size', type = float, default = 30, help = 'Size of sub blocks that each tile is broken into')
+    parser.add_argument('--use_all_points', type = bool, default = False, help = 'Whether or not to use all points in each sub block')
+    parser.add_argument('--sub_sample_num', type = int, default = 5, help = 'Number of sub tile samples to take from each tile')
+    parser.add_argument('--n_tries', type = int, default = 10, help = 'Number of searches to perform for suitable sub tiles')
+
+
     
     args = parser.parse_args()
     
@@ -484,4 +531,6 @@ if __name__ == "__main__":
                 args.calc_agl, args.cell_size, args.desired_seed_cell_size,
                 args.boundary_block_width, args.detect_water,
                 args.remove_buildings, args.output_tin_file_path, 
-                args.dtm_buffer, args.dtm_module_path)
+                args.dtm_buffer, args.dtm_module_path, args.num_points,
+                args.sub_block_size, args.use_all_points, args.sub_sample_num,
+                args.n_tries)
