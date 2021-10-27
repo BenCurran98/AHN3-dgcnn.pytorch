@@ -7,7 +7,7 @@ import warnings
 from subprocess import Popen, PIPE
 from sklearn.neighbors import KDTree
 
-def get_dtm_runner(module_path = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin"):
+def get_dtm_runner(module_path = ""):
     """Get the executable path for the RoamesDTMGenerator module
     """
     if sys.platform == "linux":
@@ -19,16 +19,22 @@ def get_dtm_runner(module_path = "/media/ben/ExtraStorage/external/RoamesDtmGene
 
     return dtm_runner
 
-def build_dtm(pc, module_path = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin",
-            cell_size = 1, desired_seed_cell_size = 90, 
-            boundary_block_width = 5, detect_water = False, 
-            remove_buildings = True, output_tin_file_path = None,
-            dtm_buffer = 6, stdout_file = "", is_dry_run = False):
+def build_dtm(pc, 
+            module_path = "",
+            cell_size = 1, 
+            desired_seed_cell_size = 90, 
+            boundary_block_width = 5, 
+            detect_water = False, 
+            remove_buildings = True, 
+            output_tin_file_path = None,
+            dtm_buffer = 6, 
+            stdout_file = "", 
+            is_dry_run = False):
     """Build the DTM model for a point cloud
 
     Args:
         pc (ndarray): Pointcloud positions for the dtm
-        module_path (str, optional): Path to DTM module. Defaults to "/home/ben/external/RoamesDtmGenerator/bin".
+        module_path (str, optional): Path to DTM module. Defaults to "".
         cell_size (int, optional): Size of dtm cell. Defaults to 1.
         desired_seed_cell_size (int, optional): Size of seed cells. Defaults to 90.
         boundary_block_width (int, optional): Width of blocks on the boundary. Defaults to 5.

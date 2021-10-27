@@ -32,22 +32,12 @@ class FugroDataset(Dataset):
     ...
     Attributes
     ----------
-    split : str
-        Indicates if this is a training or test data set
-    data_root : str
-        Default location of the directory containing the data (default '')
-    num_point : int
-        The number of points to sample from a point cloud block (default 4096)
-    block_size : float
-        Size of the blocks to subdivide a tile into (default 30.0)
-    use_all_points : bool
-        Whether to use all points in a block or to subsample (default False)
-    validation_prop : float
-        Fraction of data set to use as test/validation data (default 0.2)
-    classes : list
-        List of classes used in the data set (default [1, 2, 3, 4, 5])
-    sample_num : int
-        Number of blocks to randomly sample from each tile (default 5)
+    split (str): Indicates if this is a training or test data set. Defaults to "train"
+    data_root (str): Default location of the directory containing the data. Defaults to "."
+    num_point (int): The number of points to sample from a point cloud block. Defaults to 4096
+    use_all_points (bool): Whether to use all points in a block or to subsample. Defaults to False.
+    validation_prop (float): Fraction of data set to use as test/validation data. Defaults to 0.2
+    classes (list): List of classes used in the data set. Defaults to [1, 2, 3, 4, 5]
     """
     def __init__(self, split='train', data_root='', num_point=4096, 
                     use_all_points=False, validation_prop = 0.2, 
@@ -88,14 +78,15 @@ class FugroDataset(Dataset):
         print("Totally {} samples in {} set.".format(len(self.room_idxs), split))
 
     def create_train_mask(self, idx, tot_samples, exclude_classes = []):
-        """Generate a binary mask to select training points to contribute to learning
+        """Create a binary mask over a tiled point cloud in the data set
 
         Args:
-            idx (int): Index of the labels in the data set that are having the mask applied
-            tot_samples (int): Total number of selected points we would like
+            idx (int): Index of the point cloud being masked
+            tot_samples (int): Number of points to be flagged in the mask
+            exclude_classes (list, optional): Classes we wish to exclude from the mask. Defaults to [].
 
         Returns:
-            train_mask: Binary mask where a 1 indicates that this label will be used in back propogation
+            train_mask: Binary mask where an entry at an index indicates whether to include this point in training loss
         """
         labels = self.room_labels[idx]
         label_counts = np.zeros(len(self.classes))
@@ -121,7 +112,7 @@ class FugroDataset(Dataset):
             tot_samples (int): Total number of points to sample
 
         Returns:
-            selected_point_idxs: List of point indexs that we sample
+            selected_point_idxs (list): of point indexs that we sample
         """
         labels = self.room_labels[idx]
         label_counts = np.zeros(len(self.classes))
@@ -145,7 +136,9 @@ class FugroDataset(Dataset):
         point_idxs = [i for i in range(len(labels))]
 
         # randomly select indices, weighted inversely proportional to the number of points of this type
-        selected_point_idxs = np.random.choice(point_idxs, tot_samples, p=point_weights, replace=False)
+        selected_point_idxs = np.random.choice(point_idxs, tot_samples, 
+                                                p=point_weights, 
+                                                replace=False)
 
         return selected_point_idxs
 

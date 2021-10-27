@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 def train(k, io, 
-            data_dir = "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
+            data_dir = "",
             num_points = 7000,
             epochs = 30,
             num_classes = 5,
@@ -28,7 +28,6 @@ def train(k, io,
             momentum = 0.9,
             dropout = 0.5,
             emb_dims = 1024,
-            sample_num = 5,
             scheduler = "cos",
             validation_prop = 0.2,
             use_all_points = False,
@@ -45,19 +44,18 @@ def train(k, io,
     Args:
         k (int): Number of neighbours to calculate in feature spaces
         io (IOStream): Stream where log data is sent to
-        data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY".
-        num_points (int, optional): Number of points to sample from each block. Defaults to 5000.
-        block_size (float, optional): Size of blocks to sample from each tile. Defaults to 30.0.
+        data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "".
+        num_points (int, optional): Number of points to sample from each block. Defaults to 7000.
         epochs (int, optional): Number of epochs to train on. Defaults to 30.
         num_classes (int, optional): Number of classes to train on. Defaults to 5.
+        num_features (int, optional): Number of point features being loaded into the model. Defaults to 4.
         train_batch_size (int, optional): Number of training samples in each batch. Defaults to 8.
-        validation_batch_size (int, optional): Number of test samples in each batch. Defaults to 8.
+        validation_batch_size (int, optional): Number of validation samples in each batch. Defaults to 8.
         use_sgd (bool, optional): Indicates whether to use Stochastic Gradient Descent as an optimiser. Defaults to False.
         lr (float, optional): Learning rate of optimiser. Defaults to 0.001.
         momentum (float, optional): Momentum of optimiser (only used for SGD). Defaults to 0.9.
         dropout (float, optional): Dropout probability for dropout layer in model. Defaults to 0.5.
         emb_dims (int, optional): Dimensions to embed the global feature space into. Defaults to 1024.
-        sample_num (int, optional): Number of blocks to sample from each tile. Defaults to 5.
         scheduler (str, optional): Schedules the adjustment of the learning rate. Defaults to "cos".
         validation_prop (float, optional): Proportion of the dataset to use for testing/validation. Defaults to 0.2.
         use_all_points (bool, optional): Whether to use all points in a block or to subsample. Defaults to False.
@@ -320,6 +318,12 @@ def train(k, io,
     writer_validation_balanced_accuracy.close()
 
 def train_args(args, io):
+    """Train a DGCNN model using command line args
+
+    Args:
+        args (ArgumentParser): Set of command line arguments and their inputs
+        io (IOStream): Stream where log data is sent to
+    """
     if type(args.exclude_classes) == list:
         exclude_classes = [i for i in args.exclude_classes if i >= 0]
     else:
@@ -339,7 +343,6 @@ def train_args(args, io):
         momentum = args.momentum,
         dropout = args.dropout,
         emb_dims = args.emb_dims,
-        sample_num = args.sample_num,
         scheduler = args.scheduler,
         validation_prop = args.validation_prop,
         use_all_points = args.use_all_points,

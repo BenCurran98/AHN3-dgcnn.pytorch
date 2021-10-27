@@ -1,11 +1,9 @@
 import os
 import numpy as np
-from scipy.special import softmax
 from tqdm import tqdm
 import laspy
 import argparse
 from tqdm import tqdm
-from test import UNCLASSIFIED
 
 def get_predictions(pred_file, las_file):
     result = np.loadtxt(pred_file)

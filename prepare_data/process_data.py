@@ -1,6 +1,5 @@
 import os
 import glob
-from re import M
 from shutil import Error
 import numpy as np
 import json
@@ -8,13 +7,21 @@ import h5py
 import gc
 import laspy
 from tqdm import tqdm
-import argparse
 import pointcloud_util as utils
 from dtm import build_dtm, gen_agl
-from sklearn.neighbors import NearestNeighbors, KDTree
+from sklearn.neighbors import KDTree
+
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+CLASS_MAP_FILE = os.path.join(ROOT_DIR, "params", "class_map.json")
 
 def load_h5_pointcloud(filename, features_output = [], features = {}):
-    """Load a pointcloud in HDF5 format from `filename`"""
+    """Load a pointcloud in the HDF5 format
+
+    Args:
+        filename (str): Name of point cloud file
+        features_output (list, optional): List of point cloud features to extract. Defaults to [].
+        features (dict, optional): Maps point feature name to column it occupies in the data matrix output. Defaults to {}.
+    """
     file = h5py.File(filename, 'r+')
     # only really need position and classification - if we have agl, substitute for z
     
@@ -39,7 +46,13 @@ def load_h5_pointcloud(filename, features_output = [], features = {}):
     return data, labels
 
 def load_las_pointcloud(filename, features_output = [], features = {}):
-    """Load a pointcloud in LAS format from `filename`"""
+    """Load a pointcloud in the LAS format
+
+    Args:
+        filename (str): Name of point cloud file
+        features_output (list, optional): List of point cloud features to extract. Defaults to [].
+        features (dict, optional): Maps point feature name to column it occupies in the data matrix output. Defaults to {}.
+    """
     file = laspy.read(filename)
 
     avail_fields = [f.name for f in file.header.point_format]
@@ -81,7 +94,17 @@ def load_las_pointcloud(filename, features_output = [], features = {}):
     return data, labels
 
 def load_pointcloud(filename, features_output = [], features = {}, filter_noise = True):
-    """Load a pointcloud from a `filename"""
+    """Load a pointcloud from a file
+
+    Args:
+        filename (str): Name of pointcloud file
+        features_output (list, optional): List of point features to return. Defaults to [].
+        features (dict, optional): Maps point feature names to column index they will appear in in output matrix. Defaults to {}.
+        filter_noise (bool, optional): Whether to filter noise. Defaults to True.
+
+    Raises:
+        Exception: Unsupported file type entered
+    """
     if filename.split('.')[-1] == 'h5':
         data, labels = load_h5_pointcloud(filename, features_output = features_output, features = features)
     elif filename.split('.')[-1] == 'las':
@@ -100,7 +123,14 @@ def load_pointcloud(filename, features_output = [], features = {}, filter_noise 
     return data, labels
 
 def save_las_pointcloud(data, labels, filename, features_output = [], features = {}):
-    """Save a pointcloud in LAS format into `filename`
+    """Save a pointcloud into LAS format
+
+    Args:
+        data (array-like): Array of pointcloud data
+        labels (array-like): Array of pointcloud classification labels
+        filename (str): Name of pointcloud file to save to
+        features_output (list, optional): List of point cloud features to extract. Defaults to [].
+        features (dict, optional): Maps point feature name to column it occupies in the data matrix output. Defaults to {}.
     """
     las = laspy.create(file_version = "1.2", point_format = 3) 
 
@@ -144,21 +174,42 @@ def load_pointcloud_dir(dir, outdir,
                         remove_buildings = True, 
                         output_tin_file_path = None,
                         dtm_buffer = 6,
-                        dtm_module_path = "/media/ben//ExternalStorage/external/RoamesDtmGenerator/bin",
+                        dtm_module_path = "",
                         num_points = 7000,
                         sub_block_size = 30,
                         use_all_points = False,
                         sub_sample_num = 10,
                         n_tries = 10):
-    """Load a set of pointclouds from a directory and save them in a txt file
+    """Load pointcloud data into batches from a directory
 
     Args:
-        dir (String): Directory the pointclouds are loaded from
-        outdir (String): Directory the pointcloud text files are saved to
+        dir (str): Name of directory to load from
+        outdir (str): Namer of directory to store data files to
+        block_size (int, optional): Size of initial blocks to split point clouds into. Defaults to 100.
+        sample_num (int, optional): How many larger blocks to sample from each point cloud. Defaults to 5.
+        class_map_file (str, optional): Name of JSON file containing class label mappings. Defaults to CLASS_MAP_FILE.
+        min_num (int, optional): Minimum number of classes that must be present in each larger block to be stored. Defaults to 100.
+        las_dir (str, optional): Directory to store LAS files of sampled blocks to. Defaults to "converted-pcs".
+        features_output (list, optional): List of point features to store from each point cloud. Defaults to [].
+        features (dict, optional): Maps point feature names to column indices where they will appear in data matrices. Defaults to {}.
+        calc_agl (bool, optional): Whether to calculate AGL. Defaults to True.
+        cell_size (int, optional): Size of cells used for DTM calculation. Defaults to 1.
+        desired_seed_cell_size (int, optional): Expected seed cell size for DTM generation. Defaults to 90.
+        boundary_block_width (int, optional): Width of blocks to put on boundary for DTM generation. Defaults to 5.
+        detect_water (bool, optional): Whether to detect water in DTM generation. Defaults to False.
+        remove_buildings (bool, optional): Whether to remove buildings in DTM generation. Defaults to True.
+        output_tin_file_path (str, optional): Path to save DTM tin file to. Defaults to None.
+        dtm_buffer (int, optional): Buffer width used in DTM generation (number of cells). Defaults to 6.
+        dtm_module_path (str, optional): Location of the DTM generation module. Defaults to "".
+        num_points (int, optional): Number of points to subsample in each smaller tile. Defaults to 7000.
+        sub_block_size (int, optional): Size of smaller tiles to sample from larger tiles in a pointcloud. Defaults to 30.
+        use_all_points (bool, optional): Whether to use all points in each sub tile. Defaults to False.
+        sub_sample_num (int, optional): Number of sub block samples to take per tile. Defaults to 10.
+        n_tries (int, optional): Number of attempts to search a tile for a suitable set of sub blocks. Defaults to 10.
 
     Returns:
-        data_batches: List of point data from pointclouds
-        label_batches: List of label data from pointclouds
+        data_batches: List of batched point cloud data containing sets of sampled sub-tiles
+        label_batches: List of batches point cloud classifications for sub tiles
     """
     with open(class_map_file, "r") as f:
         class_map = json.load(f)
@@ -274,6 +325,7 @@ def convert_pc_labels(data, labels, class_map_file = CLASS_MAP_FILE):
     Args:
         data (List): List of batched pointcloud data
         labels (List): List of batched pointcloud labels
+        class_map_file (str): Name of file containing class mappings
 
     Returns:
         data: All valid entries of batch data
@@ -299,11 +351,11 @@ def extract_annotations(area, data_folder, output_path, categories, features, fe
     """Extract the labelled point clouds from a directory
 
     Args:
-        area (String): Name of the area folder being processed
-        data_folder (String): Folder containing data being processed
-        output_path (String): Where to save the processed data
+        area (str): Name of the area folder being processed
+        data_folder (str): Folder containing data being processed
+        output_path (str): Where to save the processed data
         categories (List): Valid class labels to be processed
-        features (Dict): Dict mapping point feature name to index of that feature in the text data
+        features (Dict): Dict mapping point feature name to the column index of that feature in the text data
         features_output (List): Point features being saved after processing
     """
     if not os.path.exists(output_path):
@@ -358,8 +410,8 @@ def write_anno_paths(base_dir, root_dir):
     """Write the paths of the point cloud annotation files to a common location
 
     Args:
-        base_dir (String): Base directory of the data
-        root_dir (String): Root directory of the files
+        base_dir (str): Base directory of the data
+        root_dir (str): Root directory of the files
     """
     with open(os.path.join(root_dir, 'meta/anno_paths.txt'), 'w+') as anno_paths:
         paths = []
@@ -374,8 +426,8 @@ def collect_3d_data(root_dir, output_folder):
     """Collect data in the meta data folder into numpy files
 
     Args:
-        root_dir (String): Root directory of the files
-        output_folder (String): Where to save the numpy data files
+        root_dir (str): Root directory of the files
+        output_folder (str): Where to save the numpy data files
     """
     anno_paths = [line.rstrip() for line in open(os.path.join(root_dir, 'meta/anno_paths.txt'))]
 
@@ -391,8 +443,8 @@ def write_npy_file_names(root_dir, data_path):
     """Save the names of the numpy data files for future reference
 
     Args:
-        root_dir (String): Directory of the files
-        data_path (String): Directory of the data files being referenced
+        root_dir (str): Directory of the files
+        data_path (str): Directory of the data files being referenced
     """
     with open(os.path.join(root_dir, 'meta/all_data_label.txt'), 'w+') as f:
         files = []
@@ -411,19 +463,37 @@ def process_data(base_dir, root_folder, pc_folder, data_folder,
                 remove_buildings, output_tin_file_path, dtm_buffer,
                 dtm_module_path, num_points, sub_block_size, use_all_points,
                 sub_sample_num, n_tries):
-    """Pre-process raw data for the classifier
+    """Pre-process raw point cloud data for the classifier
 
     Args:
-        base_dir (String): Base directory of the data
-        root_folder (String): Root folder of the files (contains meta-data directory)
-        pc_folder (String): Folder containing pointcloud files
-        data_folder (String): Folder containing extracted pointcloud data files
-        processed_data_folder (String): Folder containing the complete datasets
-        npy_data_folder (String): Output folder of the data summary
-        area (String): Name of the folder containing the area data we want
-        categories_file (String): JSON file containing label mappings
-        features_file (String): JSON file containing index mappings of LiDAR features
-        features_output (List): LiDAR features to extract
+        base_dir (str): Base directory of the data
+        root_folder (str): Root directory of the files
+        pc_folder (str): Name of directory to load point clouds from
+        data_folder (st): Name of directory to save extracted sub tiles to
+        processed_data_folder (str): Name of directory to store processed tile data
+        npy_data_folder (str): Name of directory to store .npy data binary files to
+        area (str): Label to assign to the set of data being processed
+        categories_file (str): Name of JSON file that maps class labels to class names
+        features_file (str): Name of JSON file mapping point feature names to column index in which they will appear in the data matrix
+        features_output (list, optional): List of point features to store from each point cloud.
+        block_size (int, optional): Size of initial blocks to split point clouds into
+        sample_num (int, optional): How many larger blocks to sample from each point cloud
+        min_class_num (int, optional): Minimum number of classes that must be present in each larger block to be stored
+        class_map_file (str, optional): Name of JSON file containing class label mappings
+        calc_agl (bool, optional): Whether to calculate AGL
+        cell_size (int, optional): Size of cells used for DTM calculation
+        desired_seed_cell_size (int, optional): Expected seed cell size for DTM generation
+        boundary_block_width (int, optional): Width of blocks to put on boundary for DTM generation
+        detect_water (bool, optional): Whether to detect water in DTM generation
+        remove_buildings (bool, optional): Whether to remove buildings in DTM generation
+        output_tin_file_path (str, optional): Path to save DTM tin file to
+        dtm_buffer (int, optional): Buffer width used in DTM generation (number of cells)
+        dtm_module_path (str, optional): Location of the DTM generation module
+        num_points (int, optional): Number of points to subsample in each smaller tile
+        sub_block_size (int, optional): Size of smaller tiles to sample from larger tiles in a pointcloud
+        use_all_points (bool, optional): Whether to use all points in each sub tile
+        sub_sample_num (int, optional): Number of sub block samples to take per tile
+        n_tries (int, optional): Number of attempts to search a tile for a suitable set of sub blocks
     """
     with open(categories_file, 'r') as f:
         categories = json.load(f)

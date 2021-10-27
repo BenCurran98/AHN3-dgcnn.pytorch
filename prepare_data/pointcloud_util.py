@@ -15,9 +15,10 @@ def collect_point_label(anno_path, out_filename, file_format='txt', class_names_
         We aggregated all the points from each instance in the room.
 
     Args:
-        anno_path: path to annotations. e.g. Area_1/office_2/Annotations/
-        out_filename: path to save collected points and labels (each line is XYZRGBL)
-        file_format: txt or numpy, determines what file format to save.
+        anno_path (str): path to annotations
+        out_filename (str): path to save collected points and labels
+        file_format (str): txt or numpy, determines what file format to save. Defaults to "txt"
+
     Returns:
         None
     Note:
@@ -59,10 +60,11 @@ def collect_point_label(anno_path, out_filename, file_format='txt', class_names_
         exit()
 
 def sample_data(data, num_sample):
-    """ data is in N x ...
-        we want to keep num_samplexC of them.
-        if N > num_sample, we will randomly keep num_sample of them.
-        if N < num_sample, we will randomly duplicate samples.
+    """Randomly sample from data
+
+    Args:
+        data (array-like): NxF matrix of point cloud features
+        num_sample (Int): Number of points to subsample. If num_sample > N, return original `data`
     """
     N = data.shape[0]
     if (N == num_sample):
@@ -76,29 +78,41 @@ def sample_data(data, num_sample):
         return np.concatenate([data, dup_data], 0), list(range(N)) + list(sample)
 
 def sample_data_label(data, label, num_sample):
+    """Subsample point cloud data and labels
+
+    Args:
+        data (array-like): NxF matrix of point cloud features
+        label (array-like): Nx1 array of classification labels
+        num_sample (Int): Number of points to subsample. If num_sample > N, return original `data`
+
+    Returns:
+        new_data (ndarray): Array of subsampled data
+        new_label (ndarray): Array of subsampled labels
+    """
     new_data, sample_indices = sample_data(data, num_sample)
     new_label = label[sample_indices]
     return new_data, new_label
 
 
-def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
-                random_sample=False, sample_num=None, sample_aug=1, use_all_points=False):
+def room2blocks(data, label, num_point, 
+                block_size=100.0, 
+                stride=50.0,
+                random_sample=False, 
+                sample_num=None,
+                use_all_points=False):
     """ Prepare block training data.
     Args:
-        data: N x 6 numpy array, 012 are XYZ in meters, 345 are RGB in [0,1]
-            assumes the data is shifted (min point is origin) and aligned
-            (aligned with XYZ axis)
-        label: N size uint8 numpy array from 0-12
-        num_point: int, how many points to sample in each block
-        block_size: float, physical size of the block in meters
-        stride: float, stride for block sweeping
-        random_sample: bool, if True, we will randomly sample blocks in the room
-        sample_num: int, if random sample, how many blocks to sample
-            [default: room area]
-        sample_aug: if random sample, how much aug
+        data (array-like): N x F numpy array, where N is the number of points, F is the number of point features
+        label (array-like): N size uint8 numpy array of classification labels
+        num_point (int): how many points to sample in each block
+        block_size (float): physical size of the block in meters. Defaults to 50
+        stride (float): stride for block sweeping. Defaults to 100
+        random_sample (bool): if True, we will randomly sample blocks in the room. Defaults to False
+        sample_num (int): if random sample, how many blocks to sample. Defaults to None
+        use_all_points (bool): whether to use all points present in each tile. Defaults to False
     Returns:
-        block_datas: K x num_point x 6 np array of XYZRGB, RGB is in [0,1]
-        block_labels: K x num_point x 1 np array of uint8 labels
+        block_data_return (ndarray): B x num_point x F array of batched point cloud tiled data (B batches)
+        block_labels (ndarray): B x num_point x 1 array of uint8 tile classification labels
         
     TODO: for this version, blocking is in fixed, non-overlapping pattern.
     """
@@ -124,7 +138,7 @@ def room2blocks(data, label, num_point, block_size=1.0, stride=1.0,
         num_block_x = int(np.ceil((x_ub - x_lb) / block_size))
         num_block_y = int(np.ceil((y_ub - y_lb) / block_size))
         if sample_num is None:
-            sample_num = num_block_x * num_block_y * sample_aug
+            sample_num = num_block_x * num_block_y
         for _ in range(sample_num):
             xbeg = np.random.uniform(x_lb, x_ub)
             ybeg = np.random.uniform(y_lb, y_ub)

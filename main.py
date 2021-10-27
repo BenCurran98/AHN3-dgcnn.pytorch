@@ -44,7 +44,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", type = str, default = "classifier", help = "What mode to execute (classifier or process_data)")
 
     # train/test related args go here
-    parser.add_argument('--data_dir', type=str, default='/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY', help='Directory of data')
+    parser.add_argument('--data_dir', type=str, default='', help='Directory of data')
     parser.add_argument('--tb_dir', type=str, default='log_tensorboard', help='Directory of tensorboard logs')
     parser.add_argument('--exp_name', type=str, default='dgcnn_test_30epochs_p100', metavar='N', help='Name of the experiment')
     parser.add_argument('--model', type=str, default='dgcnn', metavar='N', choices=['dgcnn'], help='Model to use, [dgcnn]')
@@ -94,7 +94,7 @@ if __name__ == "__main__":
     parser.add_argument('--remove_buildings', type = bool, default = True, help = 'Whether to remove buildings in DTM generation')
     parser.add_argument('--output_tin_file_path', type = any, default = None, help = 'File path of the DTM tin file to produce')
     parser.add_argument('--dtm_buffer', type = float, default = 6, help = 'Buffer (metres) around the DTM region to use')
-    parser.add_argument('--dtm_module_path', type = str, default = "/media/ben/ExtraStorage/external/RoamesDtmGenerator/bin", help = 'Path to the RoamesDTMGenerator module')
+    parser.add_argument('--dtm_module_path', type = str, default = "", help = 'Path to the RoamesDTMGenerator module')
     parser.add_argument('--num_points', type = int, default = 7000, help = 'Number of points to subsample from each sub tile')
     parser.add_argument('--sub_block_size', type = float, default = 30, help = 'Size of sub blocks that each tile is broken into')
     parser.add_argument('--use_all_points', type = bool, default = False, help = 'Whether or not to use all points in each sub block')

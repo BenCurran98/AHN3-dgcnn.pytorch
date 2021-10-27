@@ -2,24 +2,21 @@ import os
 from prepare_data.dtm import build_dtm, gen_agl
 from prepare_data.pointcloud_util import room2blocks
 import torch
-from data import FugroDataset_eval
+from data import FugroDataset, collate_pcs
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
 from util import *
 from prepare_data.process_data import load_pointcloud, save_las_pointcloud
 import sklearn.metrics as metrics
-from torch.utils.tensorboard import SummaryWriter
 from torch.nn.functional import softmax
 from tqdm import tqdm
-from dtm import *
 
 UNCLASSIFIED = 31
 
 def test(k, io, 
-            data_dir = "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY",
-            num_points = 5000,
-            block_size = 30.0,
+            data_dir = "",
+            num_points = 7000,
             num_classes = 5,
             num_features = 4,
             test_batch_size = 8,
@@ -38,9 +35,8 @@ def test(k, io,
     Args:
         k (int): Number of neighbours to calculate in feature spaces
         io (IOStream): Stream where log data is sent to
-        data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "/media/ben/ExtraStorage/InnovationConference/Datasets/data_as_S3DIS_NRI_NPY".
-        num_points (int, optional): Number of points to sample from each block. Defaults to 5000.
-        block_size (float, optional): Size of blocks to sample from each tile. Defaults to 30.0.
+        data_dir (str, optional): Directory containing the dataset in NPY format. Defaults to "".
+        num_points (int, optional): Number of points to sample from each block. Defaults to 7000.
         num_classes (int, optional): Number of classes to train on. Defaults to 5.
         test_batch_size (int, optional): Number of test samples in each batch. Defaults to 8.
         dropout (float, optional): Dropout probability for dropout layer in model. Defaults to 0.5.
@@ -64,9 +60,13 @@ def test(k, io,
     for test_area in [1]:
         test_area = str(test_area)
         if (test_area == 'all') or (test_area == test_area):
-            dataset = FugroDataset_eval(split='test', data_root=data_dir, num_point=num_points,
-                                   block_size=block_size, use_all_points=use_all_points)
-            test_loader = DataLoader(dataset, batch_size=test_batch_size, shuffle=False, drop_last=False)
+            dataset = FugroDataset(split='test', data_root=data_dir, num_point=num_points,
+                                    use_all_points=use_all_points)
+            test_loader = DataLoader(dataset, 
+                                        batch_size=test_batch_size, 
+                                        shuffle=False, 
+                                        drop_last=False, 
+                                        collate_fn = collate_pcs)
 
             room_idx = np.array(dataset.room_idxs)
 
@@ -193,6 +193,12 @@ def test(k, io,
         io.cprint(outstr)
 
 def test_args(args, io):
+    """Test a DGCNN model using command line args
+
+    Args:
+        args (ArgumentParser): Set of command line arguments and their inputs
+        io (IOStream): Stream where log data is sent to
+    """
     test(
         args.k,
         io,
@@ -226,6 +232,28 @@ def predict(k, io, pointcloud_file,
             min_class_confidence = 0.8,
             model_label = "dgcnn_model",
             model_root = "checkpoints/dgcnn"):
+    """Perform inference on a local pointcloud file
+
+    Args:
+        k (int): Number of neighbours to search for
+        io (IOStream): Stream where log data is sent to
+        pointcloud_file (str): Name of pointcloud file to classify
+        pred_pointcloud_file (str): Name of prediction pointcloud file to save
+        num_points (int, optional): Number of points to subsample in each block. Defaults to 7000.
+        block_size (float, optional): Size of blocks to divide pointcloud into. Defaults to 30.0.
+        num_classes (int, optional): Number of classes for the model to consider. Defaults to 5.
+        num_features (int, optional): Number of point features fed into the model. Defaults to 4.
+        dropout (float, optional): Dropout probability of the model. Defaults to 0.5.
+        emb_dims (int, optional): Dimension of space that the model embeds local and global features to during inference. Defaults to 1024.
+        cuda (bool, optional): Whether to send data to the GPU. Defaults to False.
+        min_class_confidence (float, optional): Minimum value of probability for model to classify point as a class. Defaults to 0.8.
+        model_label (str, optional): Label of model being used for inference. Defaults to "dgcnn_model".
+        model_root (str, optional): Directory containing model being used for inference. Defaults to "checkpoints/dgcnn".
+
+    Returns:
+        data (ndarray): Array of pointcloud data
+        preds (ndarray): Vector of classification labels output by the model
+    """
     
     model = DGCNN(num_classes, num_features, k, dropout = dropout, emb_dims = emb_dims, cuda = cuda)
 

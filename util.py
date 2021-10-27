@@ -35,10 +35,21 @@ def cal_loss(pred, gold, smoothing=True):
 
 
 class IOStream():
+    """A class for streaming data
+    """
     def __init__(self, path):
+        """
+        Args:
+            path (str): Path to file to stream data into
+        """
         self.f = open(path, 'a')
 
     def cprint(self, text):
+        """Print data into the IO file
+
+        Args:
+            text (str): Text data to be written to file
+        """
         print(text)
         self.f.write(text+'\n')
         self.f.flush()
